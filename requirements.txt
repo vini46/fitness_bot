@@ -1,3 +1,4 @@
 pyTelegramBotAPI
-garminconnect
 google-genai
+garminconnect
+flask
