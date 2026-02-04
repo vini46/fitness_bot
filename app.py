@@ -57,7 +57,7 @@ def handle_message(message):
             steps = stats.get('steps', 'unknown')
             
             response = gemini.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=f"The user has {steps} steps today. Write a motivating coach-like response."
             )
             bot.reply_to(message, response.text)
@@ -67,7 +67,7 @@ def handle_message(message):
     else:
         # Standard AI chat logic
         response = gemini.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=f"User says: {user_input}. Log this as a diet/workout entry and give feedback."
         )
         bot.reply_to(message, response.text)
