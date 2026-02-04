@@ -4,13 +4,14 @@ import json
 import telebot
 import pytz
 import logging
+import re
 from garminconnect import Garmin
 from google import genai
 from flask import Flask
 from threading import Thread
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# --- 0. LOGGING ---
+# --- 0. LOGGING CONFIGURATION ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -25,25 +26,23 @@ MY_CHAT_ID = os.environ.get('MY_CHAT_ID')
 IST = pytz.timezone('Asia/Kolkata')
 
 bot = telebot.TeleBot(TOKEN)
-gemini = genai.Client(api_key=GEMINI_KEY)
+client = genai.Client(api_key=GEMINI_KEY)
 DB_FILE = "health_db.json"
+MODEL_ID = "gemini-2.0-flash"
 
 # --- 2. GARMIN SESSION (FOLDER BASED) ---
 def init_garmin():
     token_dir = "./garmin_tokens"
-    
     if not os.path.exists(token_dir):
-        logger.error(f"❌ Folder {token_dir} not found in repository!")
+        logger.error(f"❌ Garmin tokens folder missing at {token_dir}")
         return None
-
     try:
         api = Garmin()
-        # Use the existing folder in your repo
         api.login(token_dir)
-        logger.info("✅ Garmin session initialized from local folder.")
+        logger.info("✅ Garmin session initialized.")
         return api
     except Exception as e:
-        logger.error(f"❌ Garmin folder login failed: {e}")
+        logger.error(f"❌ Garmin login failed: {e}")
         return None
 
 def get_today_str():
@@ -66,7 +65,7 @@ def save_db(data):
 # --- 4. DATA FETCHING ---
 def fetch_workout_details():
     api = init_garmin()
-    if not api: return "Garmin connection is currently offline."
+    if not api: return "Garmin connection offline."
     
     today = get_today_str()
     try:
@@ -87,21 +86,21 @@ def fetch_workout_details():
                 try:
                     sets = api.get_activity_exercise_sets(act.get('activityId'))
                     for s in sets.get('exerciseSets', []):
-                        ex_name = s.get('exerciseName', 'Unknown')
+                        ex = s.get('exerciseName', 'Unknown')
                         reps = s.get('repetitionCount', 0)
                         wt = round(s.get('weight', 0)/1000, 1)
-                        report += f"  • {ex_name}: {reps} reps @ {wt}kg\n"
+                        report += f"  • {ex}: {reps} reps @ {wt}kg\n"
                 except: pass
             report += "---\n"
         return report
     except Exception as e:
         logger.error(f"Fetch Error: {e}")
-        return "Error pulling activity data."
+        return "Error pulling Garmin data."
 
 # --- 5. PROACTIVE TASKS ---
 def morning_nudge():
     if MY_CHAT_ID:
-        bot.send_message(MY_CHAT_ID, "☀️ *Weight Check:* Time to log your weight today!")
+        bot.send_message(MY_CHAT_ID, "☀️ *Morning Check-in:* Time to log your weight today!")
 
 def water_nudge():
     if MY_CHAT_ID:
@@ -121,11 +120,14 @@ def daily_report_9pm():
     weight = db["weight"].get(today, "Not recorded")
     workouts = fetch_workout_details()
 
-    prompt = (f"Steps:{steps}, Cals:{cals}, Weight:{weight}kg. Workouts:{workouts}. "
-              "Write a short, high-performance coaching summary for today.")
+    prompt = (f"Analyze today's stats for an elite athlete. Steps:{steps}, Cals Consumed:{cals}, "
+              f"Weight:{weight}kg. Workouts:{workouts}. Give a brutal but smart coaching summary.")
     
-    analysis = gemini.models.generate_content(model="gemini-1.5-flash", contents=prompt).text
-    bot.send_message(MY_CHAT_ID, f"📊 *DAILY SUMMARY*\n\n{analysis}", parse_mode="Markdown")
+    try:
+        analysis = client.models.generate_content(model=MODEL_ID, contents=prompt).text
+        bot.send_message(MY_CHAT_ID, f"📊 *DAILY SUMMARY*\n\n{analysis}", parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Report Generation Error: {e}")
 
 # --- 6. SCHEDULER ---
 scheduler = BackgroundScheduler(timezone=IST)
@@ -140,36 +142,57 @@ def handle_input(message):
     text = message.text.lower()
     db = get_db()
     today = get_today_str()
+    logger.info(f"Processing input: {text}")
 
-    if any(w in text for w in ["workout", "exercise", "activity"]):
+    # TRIGGER: Workout Info
+    if any(w in text for w in ["workout", "exercise", "activity", "training"]):
+        bot.send_chat_action(message.chat.id, 'typing')
         bot.reply_to(message, fetch_workout_details(), parse_mode="Markdown")
 
+    # TRIGGER: Weight Logging
     elif "kg" in text or "weight" in text:
-        val = gemini.models.generate_content(model="gemini-2.0-flash", contents=f"Extract number from: {text}").text.strip()
-        db["weight"][today] = val
-        save_db(db)
-        bot.reply_to(message, f"⚖️ Weight: {val}kg.")
-
-    elif any(w in text for w in ["ate", "lunch", "dinner", "snack"]):
-        cals = gemini.models.generate_content(model="gemini-2.0-flash", contents=f"Cals in {text} (int only):").text.strip()
         try:
-            db["calories"][today] = db["calories"].get(today, 0) + int(cals)
+            res = client.models.generate_content(model=MODEL_ID, contents=f"Extract weight number from '{text}'. Just the number.").text
+            val = "".join(re.findall(r"[-+]?\d*\.\d+|\d+", res)) # Extracts floats/ints
+            db["weight"][today] = val
             save_db(db)
-            bot.reply_to(message, f"🍎 Total: {db['calories'][today]} kcal.")
-        except: bot.reply_to(message, "Error logging calories.")
+            bot.reply_to(message, f"⚖️ Weight: {val}kg.")
+        except: bot.reply_to(message, "Failed to parse weight.")
 
+    # TRIGGER: Food Logging
+    elif any(w in text for w in ["ate", "lunch", "dinner", "snack", "scoops", "had"]):
+        bot.send_chat_action(message.chat.id, 'typing')
+        prompt = f"Estimate total calories for: '{text}'. Reply with ONLY the integer number."
+        try:
+            res = client.models.generate_content(model=MODEL_ID, contents=prompt).text
+            # ROBUST CLEANER: Extract only the digits
+            cals_only = "".join(filter(str.isdigit, res))
+            if cals_only:
+                cals_val = int(cals_only)
+                db["calories"][today] = db["calories"].get(today, 0) + cals_val
+                save_db(db)
+                bot.reply_to(message, f"🍎 Added ~{cals_val} kcal.\nTotal Today: {db['calories'][today]} kcal.")
+            else:
+                bot.reply_to(message, "Could not estimate calories. Be more specific?")
+        except Exception as e:
+            logger.error(f"Food AI Error: {e}")
+            bot.reply_to(message, "Error logging calories.")
+
+    # FALLBACK: Coach Chat
     else:
-        res = gemini.models.generate_content(model="gemini-2.0-flash", contents=f"Coach reply to: {text}")
-        bot.reply_to(message, res.text)
+        try:
+            res = client.models.generate_content(model=MODEL_ID, contents=f"Short coach reply to: {text}")
+            bot.reply_to(message, res.text)
+        except: pass
 
 # --- 8. RUN ---
 app = Flask('')
 @app.route('/')
-def home(): return "Healthy"
+def home(): return "Agent Active"
 
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=8080), daemon=True).start()
     bot.remove_webhook()
     bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Bot starting...")
+    logger.info("Bot is polling...")
     bot.infinity_polling()
