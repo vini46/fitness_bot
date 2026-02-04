@@ -145,13 +145,13 @@ def handle_input(message):
         bot.reply_to(message, fetch_workout_details(), parse_mode="Markdown")
 
     elif "kg" in text or "weight" in text:
-        val = gemini.models.generate_content(model="gemini-1.5-flash", contents=f"Extract number from: {text}").text.strip()
+        val = gemini.models.generate_content(model="gemini-2.0-flash", contents=f"Extract number from: {text}").text.strip()
         db["weight"][today] = val
         save_db(db)
         bot.reply_to(message, f"⚖️ Weight: {val}kg.")
 
     elif any(w in text for w in ["ate", "lunch", "dinner", "snack"]):
-        cals = gemini.models.generate_content(model="gemini-1.5-flash", contents=f"Cals in {text} (int only):").text.strip()
+        cals = gemini.models.generate_content(model="gemini-2.0-flash", contents=f"Cals in {text} (int only):").text.strip()
         try:
             db["calories"][today] = db["calories"].get(today, 0) + int(cals)
             save_db(db)
@@ -159,7 +159,7 @@ def handle_input(message):
         except: bot.reply_to(message, "Error logging calories.")
 
     else:
-        res = gemini.models.generate_content(model="gemini-1.5-flash", contents=f"Coach reply to: {text}")
+        res = gemini.models.generate_content(model="gemini-2.0-flash", contents=f"Coach reply to: {text}")
         bot.reply_to(message, res.text)
 
 # --- 8. RUN ---
