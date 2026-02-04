@@ -44,20 +44,18 @@ def get_user_data(tg_id, date_str):
     return None
 
 def sync_to_supabase(tg_id, date_str, updates):
-    """Upserts data: This effectively registers the chat_id in our DB."""
+    """Upserts data for specific user/date."""
     data = {"telegram_id": str(tg_id), "log_date": date_str, **updates}
     supabase.table("user_configs").upsert(data, on_conflict="telegram_id, log_date").execute()
 
-# --- 3. DYNAMIC GEMINI CLIENT WITH 429 FIX ---
+# --- 3. GEMINI CLIENT WITH BACKOFF ---
 def get_gemini_response(tg_id, prompt):
-    """Initializes a client using the user's specific key with Exponential Backoff for 429s."""
     today = datetime.datetime.now(IST).strftime('%Y-%m-%d')
     user_info = get_user_data(tg_id, today)
     
     if not user_info or not user_info.get('gemini_key'):
         return "KEY_MISSING"
 
-    # Exponential Backoff Retry Logic
     for attempt in range(3):
         try:
             client = genai.Client(api_key=user_info['gemini_key'])
@@ -66,16 +64,16 @@ def get_gemini_response(tg_id, prompt):
         except Exception as e:
             err_msg = str(e)
             if "429" in err_msg or "ResourceExhausted" in err_msg:
-                wait_time = (attempt + 1) * 2  # Wait 2s, 4s, 6s
-                logger.warning(f"Rate limit (429) hit for {tg_id}. Retrying in {wait_time}s...")
+                wait_time = (attempt + 1) * 3 
+                logger.warning(f"Rate limit hit. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                logger.error(f"Gemini Error for {tg_id}: {e}")
+                logger.error(f"Gemini Error: {e}")
                 return "API_ERROR"
     
-    return "The AI is currently busy (Rate Limit). Please try again in a moment."
+    return "RATE_LIMIT_EXCEEDED"
 
-# --- 4. GARMIN SESSION ---
+# --- 4. GARMIN ---
 def init_garmin():
     token_dir = "./garmin_tokens"
     if not os.path.exists(token_dir): return None
@@ -90,14 +88,13 @@ def init_garmin():
 def get_today_str():
     return datetime.datetime.now(IST).strftime('%Y-%m-%d')
 
-# --- 5. WORKOUT FETCHING ---
 def fetch_workout_details():
     api = init_garmin()
     if not api: return "Garmin connection offline."
     today = get_today_str()
     try:
         activities = api.get_activities_by_date(today, today)
-        if not activities: return "No workouts found for today yet."
+        if not activities: return "No workouts found."
         report = ""
         for act in activities:
             name = act.get('activityName', 'Activity')
@@ -107,52 +104,55 @@ def fetch_workout_details():
         return report
     except: return "Error pulling Garmin data."
 
-# --- 6. PROACTIVE TASKS (MULTI-USER) ---
-def multi_user_report_9pm():
-    """Loops through all users with a staggered delay to avoid 429s."""
+# --- 5. SCHEDULER LOGIC ---
+def run_report_for_user(tg_id):
+    """Core logic to generate and send a report."""
     today = get_today_str()
+    user_data = get_user_data(tg_id, today)
+    if not user_data or not user_data.get('gemini_key'): return
+
+    workouts = fetch_workout_details()
+    cals = user_data.get('calories_consumed', 0)
+    weight = user_data.get('weight', "Not recorded")
+
+    prompt = (f"Analyze today's stats: Cals Consumed:{cals}, Weight:{weight}kg. "
+              f"Workouts:{workouts}. Give a brutal but smart coaching summary.")
+    
+    analysis = get_gemini_response(tg_id, prompt)
+    
+    if analysis == "RATE_LIMIT_EXCEEDED":
+        bot.send_message(tg_id, "⏳ AI is busy. Please try `/report` again in a few minutes.")
+    elif analysis not in ["KEY_MISSING", "API_ERROR"]:
+        bot.send_message(tg_id, f"📊 *HEALTH SUMMARY*\n\n{analysis}", parse_mode="Markdown")
+
+def multi_user_report_9pm():
     try:
         res = supabase.table("user_configs").select("telegram_id").execute()
         all_users = list(set([row['telegram_id'] for row in res.data]))
-        
-        workouts = fetch_workout_details()
-
         for user_id in all_users:
-            # Staggered delay: wait 1-3 seconds between users to prevent hitting global rate limits
-            time.sleep(random.uniform(1, 3))
-            
-            user_data = get_user_data(user_id, today)
-            if not user_data or not user_data.get('gemini_key'): continue
-
-            cals = user_data.get('calories_consumed', 0)
-            weight = user_data.get('weight', "Not recorded")
-
-            prompt = (f"Analyze today's stats: Cals Consumed:{cals}, Weight:{weight}kg. "
-                      f"Workouts:{workouts}. Give a brutal but smart coaching summary.")
-            
-            analysis = get_gemini_response(user_id, prompt)
-            if analysis not in ["KEY_MISSING", "API_ERROR", "The AI is currently busy (Rate Limit). Please try again in a moment."]:
-                bot.send_message(user_id, f"📊 *DAILY SUMMARY*\n\n{analysis}", parse_mode="Markdown")
+            time.sleep(random.uniform(2, 5)) # Safety delay
+            run_report_for_user(user_id)
     except Exception as e:
-        logger.error(f"Multi-user report error: {e}")
+        logger.error(f"Scheduler error: {e}")
 
-# --- 7. SCHEDULER ---
+# --- 6. HANDLERS ---
 scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(multi_user_report_9pm, 'cron', hour=21, minute=0)
 scheduler.start()
 
-# --- 8. HANDLERS ---
 @bot.message_handler(commands=['set_key'])
 def set_key(message):
     key = message.text.replace('/set_key', '').strip()
     if not key:
-        bot.reply_to(message, "Usage: `/set_key AIzaSy...`")
+        bot.reply_to(message, "Usage: `/set_key AIza...`")
         return
-    
-    today = get_today_str()
-    tg_id = message.chat.id
-    sync_to_supabase(tg_id, today, {"gemini_key": key})
-    bot.reply_to(message, f"✅ Setup Complete!\n\n**Chat ID:** `{tg_id}`\n**Status:** Registered for 9 PM reports.", parse_mode="Markdown")
+    sync_to_supabase(message.chat.id, get_today_str(), {"gemini_key": key})
+    bot.reply_to(message, "✅ Key saved and ID registered!")
+
+@bot.message_handler(commands=['report'])
+def manual_report(message):
+    bot.send_chat_action(message.chat.id, 'typing')
+    run_report_for_user(message.chat.id)
 
 @bot.message_handler(func=lambda m: True)
 def handle_input(message):
@@ -161,81 +161,32 @@ def handle_input(message):
     today = get_today_str()
 
     if any(w in text for w in ["workout", "exercise", "activity"]):
-        bot.send_chat_action(tg_id, 'typing')
         bot.reply_to(message, fetch_workout_details(), parse_mode="Markdown")
 
     elif "kg" in text or "weight" in text:
-        bot.send_chat_action(tg_id, 'typing')
-        res = get_gemini_response(tg_id, f"Extract weight number from '{text}'. Just the number.")
-        if res == "KEY_MISSING":
-            bot.reply_to(message, "Please use `/set_key` first.")
-            return
-
+        res = get_gemini_response(tg_id, f"Extract weight number from '{text}'. Just number.")
         val = "".join(re.findall(r"[-+]?\d*\.\d+|\d+", res))
         if val:
             sync_to_supabase(tg_id, today, {"weight": val})
             bot.reply_to(message, f"⚖️ Weight: {val}kg logged.")
 
     elif any(w in text for w in ["ate", "lunch", "dinner", "snack", "had"]):
-        bot.send_chat_action(tg_id, 'typing')
-        res = get_gemini_response(tg_id, f"Estimate total calories for: '{text}'. Reply with ONLY the integer.")
-        if res == "KEY_MISSING":
-            bot.reply_to(message, "Please use `/set_key` first.")
-            return
-
+        res = get_gemini_response(tg_id, f"Estimate calories for: '{text}'. Integer only.")
         cals_only = "".join(filter(str.isdigit, res))
         if cals_only:
-            cals_val = int(cals_only)
             user_data = get_user_data(tg_id, today)
-            new_total = (user_data.get('calories_consumed') or 0) + cals_val
+            new_total = (user_data.get('calories_consumed') or 0) + int(cals_only)
             sync_to_supabase(tg_id, today, {"calories_consumed": new_total})
-            bot.reply_to(message, f"🍎 Added ~{cals_val} kcal. Total: {new_total} kcal.")
+            bot.reply_to(message, f"🍎 Added ~{cals_only} kcal. Total: {new_total}")
     else:
         res = get_gemini_response(tg_id, f"Short coach reply to: {text}")
-        if res == "KEY_MISSING":
-            bot.reply_to(message, "Set your key to start: `/set_key YOUR_KEY`.")
-        else:
-            bot.reply_to(message, res)
+        bot.reply_to(message, res)
 
-@bot.message_handler(commands=['report'])
-def manual_report_trigger(message):
-    tg_id = message.chat.id
-    today = get_today_str()
-    
-    bot.send_chat_action(tg_id, 'typing')
-    
-    # Fetch data for the specific user
-    user_data = get_user_data(tg_id, today)
-    if not user_data or not user_data.get('gemini_key'):
-        bot.reply_to(message, "⚠️ No Gemini Key found. Use `/set_key` first.")
-        return
-
-    workouts = fetch_workout_details()
-    cals = user_data.get('calories_consumed', 0)
-    weight = user_data.get('weight', "Not recorded")
-
-    prompt = (f"Analyze today's stats: Cals Consumed:{cals}, Weight:{weight}kg. "
-            f"Workouts:{workouts}. Give a brutal but smart coaching summary.")
-    
-    # This uses the backoff/retry logic we added to handle 429s
-    analysis = get_gemini_response(tg_id, prompt)
-    
-    if analysis == "KEY_MISSING":
-        bot.reply_to(message, "⚠️ Please set your key using `/set_key`.")
-    elif analysis == "API_ERROR":
-        bot.reply_to(message, "❌ There was an error with your API key.")
-    elif "Rate Limit" in analysis:
-        bot.reply_to(message, "⏳ AI is still rate-limited. Wait 30 seconds and try `/report` again.")
-    else:
-        bot.send_message(tg_id, f"📊 *MANUAL SUMMARY*\n\n{analysis}", parse_mode="Markdown")
-
-# --- 9. RUN ---
+# --- 7. RUN ---
 app = Flask('')
 @app.route('/')
 def home(): return "Multi-User Agent Active"
 
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=8080), daemon=True).start()
-    bot.remove_webhook()
-    bot.delete_webhook(drop_pending_updates=True)
     bot.infinity_polling()
