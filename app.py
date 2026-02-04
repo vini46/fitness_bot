@@ -197,6 +197,38 @@ def handle_input(message):
         else:
             bot.reply_to(message, res)
 
+@bot.message_handler(commands=['report'])
+def manual_report_trigger(message):
+    tg_id = message.chat.id
+    today = get_today_str()
+    
+    bot.send_chat_action(tg_id, 'typing')
+    
+    # Fetch data for the specific user
+    user_data = get_user_data(tg_id, today)
+    if not user_data or not user_data.get('gemini_key'):
+        bot.reply_to(message, "⚠️ No Gemini Key found. Use `/set_key` first.")
+        return
+
+    workouts = fetch_workout_details()
+    cals = user_data.get('calories_consumed', 0)
+    weight = user_data.get('weight', "Not recorded")
+
+    prompt = (f"Analyze today's stats: Cals Consumed:{cals}, Weight:{weight}kg. "
+            f"Workouts:{workouts}. Give a brutal but smart coaching summary.")
+    
+    # This uses the backoff/retry logic we added to handle 429s
+    analysis = get_gemini_response(tg_id, prompt)
+    
+    if analysis == "KEY_MISSING":
+        bot.reply_to(message, "⚠️ Please set your key using `/set_key`.")
+    elif analysis == "API_ERROR":
+        bot.reply_to(message, "❌ There was an error with your API key.")
+    elif "Rate Limit" in analysis:
+        bot.reply_to(message, "⏳ AI is still rate-limited. Wait 30 seconds and try `/report` again.")
+    else:
+        bot.send_message(tg_id, f"📊 *MANUAL SUMMARY*\n\n{analysis}", parse_mode="Markdown")
+
 # --- 9. RUN ---
 app = Flask('')
 @app.route('/')
