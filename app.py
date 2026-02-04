@@ -72,5 +72,7 @@ def handle_message(message):
         )
         bot.reply_to(message, response.text)
 
+# Force-remove any old connections/webhooks
+bot.delete_webhook(drop_pending_updates=True)
 print("Telegram bot is polling...")
 bot.infinity_polling()
