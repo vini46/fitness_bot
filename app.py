@@ -4,6 +4,8 @@ import telebot
 import pytz
 import logging
 import re
+import time
+import random
 from garminconnect import Garmin
 from google import genai
 from flask import Flask
@@ -46,21 +48,32 @@ def sync_to_supabase(tg_id, date_str, updates):
     data = {"telegram_id": str(tg_id), "log_date": date_str, **updates}
     supabase.table("user_configs").upsert(data, on_conflict="telegram_id, log_date").execute()
 
-# --- 3. DYNAMIC GEMINI CLIENT ---
+# --- 3. DYNAMIC GEMINI CLIENT WITH 429 FIX ---
 def get_gemini_response(tg_id, prompt):
+    """Initializes a client using the user's specific key with Exponential Backoff for 429s."""
     today = datetime.datetime.now(IST).strftime('%Y-%m-%d')
     user_info = get_user_data(tg_id, today)
     
     if not user_info or not user_info.get('gemini_key'):
         return "KEY_MISSING"
 
-    try:
-        client = genai.Client(api_key=user_info['gemini_key'])
-        res = client.models.generate_content(model=MODEL_ID, contents=prompt)
-        return res.text
-    except Exception as e:
-        logger.error(f"Gemini Error for {tg_id}: {e}")
-        return "API_ERROR"
+    # Exponential Backoff Retry Logic
+    for attempt in range(3):
+        try:
+            client = genai.Client(api_key=user_info['gemini_key'])
+            res = client.models.generate_content(model=MODEL_ID, contents=prompt)
+            return res.text
+        except Exception as e:
+            err_msg = str(e)
+            if "429" in err_msg or "ResourceExhausted" in err_msg:
+                wait_time = (attempt + 1) * 2  # Wait 2s, 4s, 6s
+                logger.warning(f"Rate limit (429) hit for {tg_id}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Gemini Error for {tg_id}: {e}")
+                return "API_ERROR"
+    
+    return "The AI is currently busy (Rate Limit). Please try again in a moment."
 
 # --- 4. GARMIN SESSION ---
 def init_garmin():
@@ -96,17 +109,18 @@ def fetch_workout_details():
 
 # --- 6. PROACTIVE TASKS (MULTI-USER) ---
 def multi_user_report_9pm():
-    """Loops through all users who have registered a key in the DB."""
+    """Loops through all users with a staggered delay to avoid 429s."""
     today = get_today_str()
-    # Get unique telegram IDs that have a gemini key
     try:
         res = supabase.table("user_configs").select("telegram_id").execute()
-        # Create a set of unique IDs
         all_users = list(set([row['telegram_id'] for row in res.data]))
         
-        workouts = fetch_workout_details() # Currently global for the host's account
+        workouts = fetch_workout_details()
 
         for user_id in all_users:
+            # Staggered delay: wait 1-3 seconds between users to prevent hitting global rate limits
+            time.sleep(random.uniform(1, 3))
+            
             user_data = get_user_data(user_id, today)
             if not user_data or not user_data.get('gemini_key'): continue
 
@@ -117,7 +131,7 @@ def multi_user_report_9pm():
                       f"Workouts:{workouts}. Give a brutal but smart coaching summary.")
             
             analysis = get_gemini_response(user_id, prompt)
-            if analysis not in ["KEY_MISSING", "API_ERROR"]:
+            if analysis not in ["KEY_MISSING", "API_ERROR", "The AI is currently busy (Rate Limit). Please try again in a moment."]:
                 bot.send_message(user_id, f"📊 *DAILY SUMMARY*\n\n{analysis}", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Multi-user report error: {e}")
@@ -137,10 +151,8 @@ def set_key(message):
     
     today = get_today_str()
     tg_id = message.chat.id
-    
-    # This stores both the Chat ID and the Key in the database
     sync_to_supabase(tg_id, today, {"gemini_key": key})
-    bot.reply_to(message, f"✅ Setup Complete!\n\n**Chat ID:** `{tg_id}`\n**Status:** Registered for 9 PM reports.\n\nYou can now log food or weight.", parse_mode="Markdown")
+    bot.reply_to(message, f"✅ Setup Complete!\n\n**Chat ID:** `{tg_id}`\n**Status:** Registered for 9 PM reports.", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: True)
 def handle_input(message):
