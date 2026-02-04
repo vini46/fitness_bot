@@ -14,21 +14,15 @@ def home():
     return "Fitness Bot is running and healthy!"
 
 def run_health_server():
-    # Koyeb pings 8080. If this server doesn't respond, Koyeb restarts the bot.
     app.run(host='0.0.0.0', port=8080)
 
-# Start health check in background
 Thread(target=run_health_server, daemon=True).start()
 
-# --- 2. SETUP & ENVIRONMENT VARIABLES ---
+# --- 2. SETUP ---
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
 GARMIN_EMAIL = os.environ.get('GARMIN_EMAIL')
 GARMIN_PASSWORD = os.environ.get('GARMIN_PASSWORD')
-
-# Safety check to prevent NoneType crashes
-if not all([TOKEN, GEMINI_KEY]):
-    raise ValueError("Missing critical Environment Variables in Koyeb settings!")
 
 bot = telebot.TeleBot(TOKEN)
 gemini = genai.Client(api_key=GEMINI_KEY)
@@ -36,12 +30,11 @@ gemini = genai.Client(api_key=GEMINI_KEY)
 # --- 3. GARMIN SESSION HANDLING ---
 def init_garmin():
     token_dir = "./garmin_tokens"
-    
     try:
         if os.path.exists(token_dir):
             print("Found saved Garmin tokens! Bypassing MFA...")
             api = Garmin()
-            api.login(token_dir) # This loads your local session files
+            api.login(token_dir)
         else:
             print("No tokens found. Falling back to credentials...")
             api = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
@@ -54,14 +47,29 @@ def init_garmin():
 garmin = init_garmin()
 
 # --- 4. BOT HANDLERS ---
+
+# NEW: Explicit Test Command (Must be ABOVE the catch-all)
+@bot.message_handler(commands=['testgarmin'])
+def test_garmin(message):
+    if not garmin:
+        bot.reply_to(message, "❌ Garmin is not initialized. Check Koyeb logs.")
+        return
+    try:
+        # Fetching full name as a lightweight connectivity test
+        name = garmin.get_full_name()
+        bot.reply_to(message, f"✅ Garmin Connection Active!\nUser: {name}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Garmin Test Failed: {str(e)}")
+
+# Existing Catch-All Handler
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     user_input = message.text.lower()
     
-    # Trigger Garmin Stats
-    if any(word in user_input for word in ["garmin", "stats", "steps"]):
+    # 1. Check if user is asking for Garmin data
+    if any(word in user_input for word in ["garmin", "stats", "steps", "activity"]):
         if not garmin:
-            bot.reply_to(message, "⚠️ Garmin connection is offline. Check logs.")
+            bot.reply_to(message, "⚠️ Garmin connection is offline.")
             return
             
         try:
@@ -69,31 +77,23 @@ def handle_message(message):
             stats = garmin.get_user_summary(today)
             steps = stats.get('steps', 0)
             
-            # Use Gemini 2.5-Flash for better coach-like responses
-            prompt = f"The user has {steps} steps today. Write a motivating coach-like response."
-            response = gemini.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt
-            )
+            prompt = f"The user has {steps} steps today. Write a short, high-energy coach response."
+            response = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
             bot.reply_to(message, response.text)
         except Exception as e:
-            bot.reply_to(message, f"Error fetching data: {str(e)}")
+            bot.reply_to(message, f"Error fetching stats: {str(e)}")
             
+    # 2. Otherwise, treat as general AI chat
     else:
-        # Standard AI Logging
         try:
-            prompt = f"User says: {message.text}. Log this as a diet/workout entry and give feedback."
-            response = gemini.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt
-            )
+            prompt = f"User is tracking fitness. They said: {message.text}. Reply as a supportive coach."
+            response = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
             bot.reply_to(message, response.text)
         except Exception as e:
-            bot.reply_to(message, "The AI is a bit busy. Try again in a second!")
+            bot.reply_to(message, "AI is resting. Try again in a moment!")
 
-# --- 5. START POLLING ---
+# --- 5. START ---
 if __name__ == "__main__":
-    print("Clearing old webhooks...")
     bot.delete_webhook(drop_pending_updates=True)
-    print("Bot is now listening for messages on Telegram!")
+    print("Bot is live!")
     bot.infinity_polling()
