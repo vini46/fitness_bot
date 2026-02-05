@@ -136,9 +136,20 @@ def multi_user_report_9pm():
     except Exception as e:
         logger.error(f"Scheduler error: {e}")
 
+def morning_reminder():
+    try:
+        res = supabase.table("user_configs").select("telegram_id").execute()
+        all_users = list(set([row['telegram_id'] for row in res.data]))
+        for user_id in all_users:
+            time.sleep(random.uniform(2, 5))
+            bot.send_message(user_id, "☀️ Good morning! Don't forget to log your weight today. Just type something like '85kg' or 'My weight is 85'.")
+    except Exception as e:
+        logger.error(f"Morning reminder error: {e}")
+
 # --- 6. HANDLERS ---
 scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(multi_user_report_9pm, 'cron', hour=21, minute=0)
+scheduler.add_job(morning_reminder, 'cron', hour=8, minute=0)
 scheduler.start()
 
 @bot.message_handler(commands=['set_key'])
