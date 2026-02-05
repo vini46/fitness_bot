@@ -172,10 +172,38 @@ def morning_reminder():
     except Exception as e:
         logger.error(f"Morning reminder error: {e}")
 
+def water_reminder():
+    try:
+        res = supabase.table("user_configs").select("telegram_id").execute()
+        all_users = list(set([row['telegram_id'] for row in res.data]))
+        for user_id in all_users:
+            time.sleep(random.uniform(2, 5))
+            bot.send_message(user_id, "💧 Stay hydrated! Time for a glass of water.")
+    except Exception as e:
+        logger.error(f"Water reminder error: {e}")
+
+def workout_nudge():
+    try:
+        res = supabase.table("user_configs").select("telegram_id").execute()
+        all_users = list(set([row['telegram_id'] for row in res.data]))
+        api = init_garmin()
+        if not api: return
+        
+        today = get_today_str()
+        for user_id in all_users:
+            time.sleep(random.uniform(2, 5))
+            activities = api.get_activities_by_date(today, today)
+            if not activities:
+                bot.send_message(user_id, "💪 Don't forget to move today! A quick walk or a short workout makes a big difference. You've got this!")
+    except Exception as e:
+        logger.error(f"Workout nudge error: {e}")
+
 # --- 6. HANDLERS ---
 scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(multi_user_report_9pm, 'cron', hour=21, minute=0)
 scheduler.add_job(morning_reminder, 'cron', hour=8, minute=0)
+scheduler.add_job(water_reminder, 'cron', hour='9,12,15,18,21', minute=0)
+scheduler.add_job(workout_nudge, 'cron', hour=19, minute=0)
 scheduler.start()
 
 @bot.message_handler(commands=['set_key'])
