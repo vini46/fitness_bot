@@ -4,12 +4,22 @@ import re
 import datetime
 import logging
 from app.config import IST, MODEL_ID
-from app.database import get_user_data, sync_to_supabase
+from app.database import get_user_data, sync_to_supabase, supabase
 from app.services.garmin import fetch_workout_details, get_today_str
 from app.services.gemini import get_gemini_response
 from app.bot.bot_instance import bot
 
 logger = logging.getLogger(__name__)
+
+def get_unique_users():
+    try:
+        res = supabase.table("user_configs").select("telegram_id").execute()
+        unique_users = list(set([row['telegram_id'] for row in res.data]))
+        logger.info(f"Fetched {len(unique_users)} unique users from {len(res.data)} total records.")
+        return unique_users
+    except Exception as e:
+        logger.error(f"Error fetching unique users: {e}")
+        return []
 
 def run_report_for_user(tg_id):
     today = get_today_str()
@@ -38,47 +48,46 @@ def run_report_for_user(tg_id):
         bot.send_message(tg_id, f"📊 HEALTH SUMMARY\n\n{analysis}")
 
 def multi_user_report_9pm():
-    try:
-        from app.database import supabase
-        res = supabase.table("user_configs").select("telegram_id").execute()
-        all_users = list(set([row['telegram_id'] for row in res.data]))
-        for user_id in all_users:
+    logger.info("Starting scheduled 9pm report job.")
+    all_users = get_unique_users()
+    for user_id in all_users:
+        try:
             time.sleep(random.uniform(2, 5))
             run_report_for_user(user_id)
-    except Exception as e:
-        logger.error(f"Scheduler error: {e}")
+        except Exception as e:
+            logger.error(f"Error in 9pm report for {user_id}: {e}")
 
 def morning_reminder():
-    try:
-        from app.database import supabase
-        res = supabase.table("user_configs").select("telegram_id").execute()
-        all_users = list(set([row['telegram_id'] for row in res.data]))
-        for user_id in all_users:
+    logger.info("Starting scheduled morning reminder job.")
+    all_users = get_unique_users()
+    for user_id in all_users:
+        try:
             time.sleep(random.uniform(2, 5))
             bot.send_message(user_id, "☀️ Good morning! Don't forget to log your weight today. Just type something like '85kg' or 'My weight is 85'.")
-    except Exception as e:
-        logger.error(f"Morning reminder error: {e}")
+        except Exception as e:
+            logger.error(f"Error in morning reminder for {user_id}: {e}")
 
 def water_reminder():
-    try:
-        from app.database import supabase
-        res = supabase.table("user_configs").select("telegram_id").execute()
-        all_users = list(set([row['telegram_id'] for row in res.data]))
-        for user_id in all_users:
+    logger.info("Starting scheduled water reminder job.")
+    all_users = get_unique_users()
+    if not all_users:
+        logger.warning("No users found for water reminder.")
+    for user_id in all_users:
+        try:
             time.sleep(random.uniform(2, 5))
             bot.send_message(user_id, "💧 Stay hydrated! Time for a glass of water.")
-    except Exception as e:
-        logger.error(f"Water reminder error: {e}")
+            logger.info(f"Water reminder sent to {user_id}")
+        except Exception as e:
+            logger.error(f"Error sending water reminder to {user_id}: {e}")
 
 def workout_nudge():
-    try:
-        from app.database import supabase
-        from app.services.garmin import get_garmin_client
-        res = supabase.table("user_configs").select("telegram_id").execute()
-        all_users = list(set([row['telegram_id'] for row in res.data]))
-        
-        today = get_today_str()
-        for user_id in all_users:
+    logger.info("Starting scheduled workout nudge job.")
+    from app.services.garmin import get_garmin_client
+    all_users = get_unique_users()
+    
+    today = get_today_str()
+    for user_id in all_users:
+        try:
             time.sleep(random.uniform(2, 5))
             api = get_garmin_client(user_id)
             if not api: continue
@@ -86,5 +95,6 @@ def workout_nudge():
             activities = api.get_activities_by_date(today, today)
             if not activities:
                 bot.send_message(user_id, "💪 Don't forget to move today! A quick walk or a short workout makes a big difference. You've got this!")
-    except Exception as e:
-        logger.error(f"Workout nudge error: {e}")
+                logger.info(f"Workout nudge sent to {user_id}")
+        except Exception as e:
+            logger.error(f"Error in workout nudge for {user_id}: {e}")
