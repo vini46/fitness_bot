@@ -33,14 +33,32 @@ MODEL_ID = "gemini-2.0-flash"
 
 # --- 2. SUPABASE HELPERS ---
 def get_user_data(tg_id, date_str):
+    # Try to get existing record for the specific date
     res = supabase.table("user_configs").select("*").eq("telegram_id", str(tg_id)).eq("log_date", date_str).execute()
-    if res.data:
-        return res.data[0]
+    data = res.data[0] if res.data else None
     
-    recent = supabase.table("user_configs").select("gemini_key").eq("telegram_id", str(tg_id)).order("log_date", desc=True).limit(1).execute()
+    # If key is found in the current record, we're good
+    if data and data.get('gemini_key'):
+        return data
+    
+    # If key is missing or no record exists, fetch the most recent valid gemini_key
+    recent = (supabase.table("user_configs")
+              .select("gemini_key")
+              .eq("telegram_id", str(tg_id))
+              .not_.is_("gemini_key", "null")
+              .order("log_date", desc=True)
+              .limit(1)
+              .execute())
+    
     if recent.data:
-        return {"gemini_key": recent.data[0]['gemini_key'], "calories_consumed": 0, "weight": None}
-    return None
+        key = recent.data[0]['gemini_key']
+        if data:
+            data['gemini_key'] = key
+            return data
+        # If no record existed for today, return a template with the fetched key
+        return {"gemini_key": key, "calories_consumed": 0, "weight": None}
+    
+    return data
 
 def sync_to_supabase(tg_id, date_str, updates):
     data = {"telegram_id": str(tg_id), "log_date": date_str, **updates}
