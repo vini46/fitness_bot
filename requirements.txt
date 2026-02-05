@@ -5,4 +5,5 @@ garminconnect
 flask
 garth
 apscheduler
-pytzwaitress
+pytz
+waitress
