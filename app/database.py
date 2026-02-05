@@ -53,5 +53,16 @@ def get_user_data(tg_id, date_str):
     return data
 
 def sync_to_supabase(tg_id, date_str, updates):
-    data = {"telegram_id": str(tg_id), "log_date": date_str, **updates}
-    supabase.table("user_configs").upsert(data, on_conflict="telegram_id, log_date").execute()
+    # Fetch current data to ensure we don't overwrite other fields (like keys or sessions)
+    current_data = get_user_data(tg_id, date_str)
+    
+    # Merge existing data with new updates
+    updated_row = {
+        "telegram_id": str(tg_id),
+        "log_date": date_str,
+        **current_data,
+        **updates
+    }
+    
+    # Upsert the full record
+    supabase.table("user_configs").upsert(updated_row, on_conflict="telegram_id, log_date").execute()

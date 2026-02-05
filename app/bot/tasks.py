@@ -79,17 +79,13 @@ def morning_reminder():
         except Exception as e:
             logger.error(f"Error in morning reminder for {user_id}: {e}")
 
-def water_reminder():
-    logger.info("Starting water reminder job.")
+def water_reminder(specific_hr=None):
+    logger.info(f"Starting water reminder check (hr={specific_hr}).")
     all_users = get_unique_users()
-    if not all_users:
-        logger.warning("No users found for water reminder.")
-        return
+    if not all_users: return
 
-    now = datetime.datetime.now(IST)
+    hr = specific_hr if specific_hr is not None else datetime.datetime.now(IST).hour
     today = get_today_str()
-    # Identify the slot (e.g., water_12pm)
-    hr = now.hour
     slot = f"water_{hr}h"
 
     for user_id in all_users:
@@ -98,25 +94,23 @@ def water_reminder():
             notified = user_data.get('last_notified', {})
             
             if notified.get(slot) == today:
-                logger.info(f"Water reminder already sent to {user_id} for slot {slot}")
                 continue
 
-            time.sleep(random.uniform(2, 5))
+            time.sleep(random.uniform(0.5, 1.5))
             bot.send_message(user_id, "💧 Stay hydrated! Time for a glass of water.")
             
-            # Update last_notified
             notified[slot] = today
             sync_to_supabase(user_id, today, {"last_notified": notified})
-            logger.info(f"Water reminder sent and persisted for {user_id} ({slot})")
+            logger.info(f"Water reminder sent for {user_id} ({slot})")
         except Exception as e:
-            logger.error(f"Error sending water reminder to {user_id}: {e}")
+            logger.error(f"Error in water reminder ({slot}): {e}")
 
 def workout_nudge():
     logger.info("Starting workout nudge job.")
-    from app.services.garmin import get_garmin_client
     all_users = get_unique_users()
     today = get_today_str()
     slot = "workout_6pm"
+    from app.services.garmin import get_garmin_client
     
     for user_id in all_users:
         try:
@@ -126,7 +120,7 @@ def workout_nudge():
             if notified.get(slot) == today:
                 continue
 
-            time.sleep(random.uniform(2, 5))
+            time.sleep(random.uniform(0.5, 1.5))
             api = get_garmin_client(user_id)
             if not api: continue
             
@@ -136,25 +130,25 @@ def workout_nudge():
                 
                 notified[slot] = today
                 sync_to_supabase(user_id, today, {"last_notified": notified})
-                logger.info(f"Workout nudge sent and persisted for {user_id}")
         except Exception as e:
             logger.error(f"Error in workout nudge for {user_id}: {e}")
 
 def startup_catchup():
     """Run on startup to catch any reminders missed during downtime."""
-    logger.info("Running startup catch-up check.")
-    
+    logger.info("Running robust startup catch-up check.")
     now = datetime.datetime.now(IST)
     hr = now.hour
     
-    # Catch morning reminder if started between 8am and 10am
-    if 8 <= hr < 10:
+    # 1. Catch 8 AM Morning Reminder if bot starts later
+    if hr >= 8:
         morning_reminder()
         
-    # Catch water reminders for current window (9, 12, 15, 18, 21)
-    if hr in [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]:
-        water_reminder()
-        
-    # Catch workout nudge if started between 6pm and 8pm
-    if 18 <= hr < 20:
+    # 2. Catch all scheduled Water Reminders (9, 12, 15, 18, 21) that were missed
+    water_slots = [9, 12, 15, 18, 21]
+    for w_hr in water_slots:
+        if hr >= w_hr:
+            water_reminder(specific_hr=w_hr)
+            
+    # 3. Catch 6 PM Workout Nudge if bot starts later
+    if hr >= 18:
         workout_nudge()
