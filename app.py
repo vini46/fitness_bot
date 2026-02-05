@@ -195,7 +195,7 @@ def handle_input(message):
     text = message.text.lower()
     today = get_today_str()
 
-    if any(w in text for w in ["workout", "exercise", "activity"]):
+    if any(w in text for w in ["workout", "exercise", "activity", "steps", "step", "walk"]):
         bot.reply_to(message, fetch_workout_details())
     elif "kg" in text or "weight" in text:
         res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
