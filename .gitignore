@@ -1,0 +1,5 @@
+__pycache__/
+*.json
+!requirements.txt
+garmin_tokens/
+.DS_Store
