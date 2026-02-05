@@ -4,7 +4,8 @@ from app.bot.tasks import (
     multi_user_report_9pm, 
     morning_reminder, 
     water_reminder, 
-    workout_nudge
+    workout_nudge,
+    startup_catchup
 )
 
 import logging
@@ -27,4 +28,8 @@ def start_scheduler():
     scheduler.add_job(workout_nudge, 'cron', hour=18, minute=0, **job_defaults)
     scheduler.start()
     logger.info("Scheduler started successfully with 4 jobs.")
+    
+    # Trigger catch-up check immediately
+    startup_catchup()
+    
     return scheduler

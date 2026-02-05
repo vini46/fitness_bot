@@ -32,6 +32,20 @@ def get_user_data(tg_id, date_str):
         if recent_gs.data:
             data['garmin_session'] = recent_gs.data[0]['garmin_session']
             
+    # Independently propagate last_notified if missing today
+    if not data.get('last_notified'):
+        recent_ln = (supabase.table("user_configs")
+                     .select("last_notified")
+                     .eq("telegram_id", str(tg_id))
+                     .not_.is_("last_notified", "null")
+                     .order("log_date", desc=True)
+                     .limit(1)
+                     .execute())
+        if recent_ln.data:
+            data['last_notified'] = recent_ln.data[0]['last_notified']
+        else:
+            data['last_notified'] = {}
+            
     # Ensure standard fields exist if it's a new dict
     if 'calories_consumed' not in data: data['calories_consumed'] = 0
     if 'weight' not in data: data['weight'] = None

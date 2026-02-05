@@ -58,36 +58,74 @@ def multi_user_report_9pm():
             logger.error(f"Error in 9pm report for {user_id}: {e}")
 
 def morning_reminder():
-    logger.info("Starting scheduled morning reminder job.")
+    logger.info("Starting morning reminder job.")
     all_users = get_unique_users()
+    today = get_today_str()
+    slot = "weight_8am"
+
     for user_id in all_users:
         try:
+            user_data = get_user_data(user_id, today)
+            notified = user_data.get('last_notified', {})
+
+            if notified.get(slot) == today:
+                continue
+
             time.sleep(random.uniform(2, 5))
             bot.send_message(user_id, "☀️ Good morning! Don't forget to log your weight today. Just type something like '85kg' or 'My weight is 85'.")
+            
+            notified[slot] = today
+            sync_to_supabase(user_id, today, {"last_notified": notified})
         except Exception as e:
             logger.error(f"Error in morning reminder for {user_id}: {e}")
 
 def water_reminder():
-    logger.info("Starting scheduled water reminder job.")
+    logger.info("Starting water reminder job.")
     all_users = get_unique_users()
     if not all_users:
         logger.warning("No users found for water reminder.")
+        return
+
+    now = datetime.datetime.now(IST)
+    today = get_today_str()
+    # Identify the slot (e.g., water_12pm)
+    hr = now.hour
+    slot = f"water_{hr}h"
+
     for user_id in all_users:
         try:
+            user_data = get_user_data(user_id, today)
+            notified = user_data.get('last_notified', {})
+            
+            if notified.get(slot) == today:
+                logger.info(f"Water reminder already sent to {user_id} for slot {slot}")
+                continue
+
             time.sleep(random.uniform(2, 5))
             bot.send_message(user_id, "💧 Stay hydrated! Time for a glass of water.")
-            logger.info(f"Water reminder sent to {user_id}")
+            
+            # Update last_notified
+            notified[slot] = today
+            sync_to_supabase(user_id, today, {"last_notified": notified})
+            logger.info(f"Water reminder sent and persisted for {user_id} ({slot})")
         except Exception as e:
             logger.error(f"Error sending water reminder to {user_id}: {e}")
 
 def workout_nudge():
-    logger.info("Starting scheduled workout nudge job.")
+    logger.info("Starting workout nudge job.")
     from app.services.garmin import get_garmin_client
     all_users = get_unique_users()
-    
     today = get_today_str()
+    slot = "workout_6pm"
+    
     for user_id in all_users:
         try:
+            user_data = get_user_data(user_id, today)
+            notified = user_data.get('last_notified', {})
+
+            if notified.get(slot) == today:
+                continue
+
             time.sleep(random.uniform(2, 5))
             api = get_garmin_client(user_id)
             if not api: continue
@@ -95,6 +133,28 @@ def workout_nudge():
             activities = api.get_activities_by_date(today, today)
             if not activities:
                 bot.send_message(user_id, "💪 Don't forget to move today! A quick walk or a short workout makes a big difference. You've got this!")
-                logger.info(f"Workout nudge sent to {user_id}")
+                
+                notified[slot] = today
+                sync_to_supabase(user_id, today, {"last_notified": notified})
+                logger.info(f"Workout nudge sent and persisted for {user_id}")
         except Exception as e:
             logger.error(f"Error in workout nudge for {user_id}: {e}")
+
+def startup_catchup():
+    """Run on startup to catch any reminders missed during downtime."""
+    logger.info("Running startup catch-up check.")
+    
+    now = datetime.datetime.now(IST)
+    hr = now.hour
+    
+    # Catch morning reminder if started between 8am and 10am
+    if 8 <= hr < 10:
+        morning_reminder()
+        
+    # Catch water reminders for current window (9, 12, 15, 18, 21)
+    if hr in [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]:
+        water_reminder()
+        
+    # Catch workout nudge if started between 6pm and 8pm
+    if 18 <= hr < 20:
+        workout_nudge()
