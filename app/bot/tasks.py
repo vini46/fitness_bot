@@ -16,7 +16,7 @@ def run_report_for_user(tg_id):
     user_data = get_user_data(tg_id, today)
     if not user_data or not user_data.get('gemini_key'): return
 
-    workouts = fetch_workout_details()
+    workouts = fetch_workout_details(tg_id)
     cals = user_data.get('calories_consumed', 0)
     weight = user_data.get('weight', "Not recorded")
 
@@ -73,15 +73,16 @@ def water_reminder():
 def workout_nudge():
     try:
         from app.database import supabase
-        from app.services.garmin import init_garmin
+        from app.services.garmin import get_garmin_client
         res = supabase.table("user_configs").select("telegram_id").execute()
         all_users = list(set([row['telegram_id'] for row in res.data]))
-        api = init_garmin()
-        if not api: return
         
         today = get_today_str()
         for user_id in all_users:
             time.sleep(random.uniform(2, 5))
+            api = get_garmin_client(user_id)
+            if not api: continue
+            
             activities = api.get_activities_by_date(today, today)
             if not activities:
                 bot.send_message(user_id, "💪 Don't forget to move today! A quick walk or a short workout makes a big difference. You've got this!")

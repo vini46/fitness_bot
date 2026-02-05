@@ -7,5 +7,4 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 IST = pytz.timezone('Asia/Kolkata')
 MODEL_ID = "gemini-2.0-flash"
-GARMIN_TOKEN_DIR = "./garmin_tokens"
 PORT = int(os.environ.get('PORT', 8080))

@@ -12,9 +12,9 @@ def get_user_data(tg_id, date_str):
     if data and data.get('gemini_key'):
         return data
     
-    # If key is missing or no record exists, fetch the most recent valid gemini_key
+    # If key or garmin_session is missing, fetch the most recent valid record
     recent = (supabase.table("user_configs")
-              .select("gemini_key")
+              .select("gemini_key, garmin_session")
               .eq("telegram_id", str(tg_id))
               .not_.is_("gemini_key", "null")
               .order("log_date", desc=True)
@@ -22,12 +22,16 @@ def get_user_data(tg_id, date_str):
               .execute())
     
     if recent.data:
-        key = recent.data[0]['gemini_key']
+        res_data = recent.data[0]
+        key = res_data.get('gemini_key')
+        gs = res_data.get('garmin_session')
+        
         if data:
             data['gemini_key'] = key
+            data['garmin_session'] = gs
             return data
-        # If no record existed for today, return a template with the fetched key
-        return {"gemini_key": key, "calories_consumed": 0, "weight": None}
+        # If no record existed for today, return a template
+        return {"gemini_key": key, "garmin_session": gs, "calories_consumed": 0, "weight": None}
     
     return data
 

@@ -20,6 +20,22 @@ def register_handlers():
         bot.send_chat_action(message.chat.id, 'typing')
         run_report_for_user(message.chat.id)
 
+    @bot.message_handler(commands=['set_garmin'])
+    def set_garmin(message):
+        parts = message.text.split()
+        if len(parts) != 3:
+            bot.reply_to(message, "Usage: `/set_garmin email password` \n\n⚠️ Please delete this message after sending to protect your password!", parse_mode="Markdown")
+            return
+        
+        email, password = parts[1], parts[2]
+        bot.send_message(message.chat.id, "⏳ Authenticating with Garmin... (this may take a minute)")
+        
+        from app.services.garmin import login_user_to_garmin
+        if login_user_to_garmin(message.chat.id, email, password):
+            bot.reply_to(message, "✅ Garmin linked successfully! You can now delete your credential message.")
+        else:
+            bot.reply_to(message, "❌ Garmin login failed. Please check your email/password.")
+
     @bot.message_handler(func=lambda m: True)
     def handle_input(message):
         tg_id = message.chat.id
@@ -27,7 +43,7 @@ def register_handlers():
         today = get_today_str()
 
         if any(w in text for w in ["workout", "exercise", "activity", "steps", "step", "walk"]):
-            bot.reply_to(message, fetch_workout_details())
+            bot.reply_to(message, fetch_workout_details(tg_id))
         elif "kg" in text or "weight" in text:
             res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
             match = re.search(r"[-+]?\d*\.?\d+", res)

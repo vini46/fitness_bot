@@ -1,22 +1,60 @@
-import os
-import datetime
+import shutil
 from garminconnect import Garmin
-from app.config import IST, GARMIN_TOKEN_DIR
+from app.config import IST
 
-def init_garmin():
-    if not os.path.exists(GARMIN_TOKEN_DIR): return None
+def get_garmin_client(tg_id):
+    from app.database import get_user_data
+    user_info = get_user_data(tg_id, get_today_str())
+    if not user_info or not user_info.get('garmin_session'):
+        return None
+    
+    # Create a temp dir to load the session
+    tmp_dir = tempfile.mkdtemp()
     try:
+        session_data = user_info['garmin_session']
+        for filename, content in session_data.items():
+            with open(os.path.join(tmp_dir, filename), 'w') as f:
+                json.dump(content, f)
+        
         api = Garmin()
-        api.login(GARMIN_TOKEN_DIR)
+        api.login(tmp_dir)
         return api
-    except: return None
+    except Exception as e:
+        print(f"Garmin resume error for {tg_id}: {e}")
+        return None
+    finally:
+        shutil.rmtree(tmp_dir)
+
+def login_user_to_garmin(tg_id, email, password):
+    from app.database import sync_to_supabase
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        api = Garmin(email, password)
+        api.login()
+        api.garth.dump(tmp_dir)
+        
+        # Read all files in tmp_dir and store them in a dict
+        session_dict = {}
+        for filename in os.listdir(tmp_dir):
+            file_path = os.path.join(tmp_dir, filename)
+            if os.path.isfile(file_path):
+                with open(file_path, 'r') as f:
+                    session_dict[filename] = json.load(f)
+        
+        sync_to_supabase(tg_id, get_today_str(), {"garmin_session": session_dict})
+        return True
+    except Exception as e:
+        print(f"Garmin login error for {tg_id}: {e}")
+        return False
+    finally:
+        shutil.rmtree(tmp_dir)
 
 def get_today_str():
     return datetime.datetime.now(IST).strftime('%Y-%m-%d')
 
-def fetch_workout_details():
-    api = init_garmin()
-    if not api: return "No Garmin data link."
+def fetch_workout_details(tg_id):
+    api = get_garmin_client(tg_id)
+    if not api: return "No Garmin data link. Use `/set_garmin email password` to link your account."
     today = get_today_str()
     try:
         # Get Steps
