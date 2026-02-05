@@ -84,14 +84,22 @@ def fetch_workout_details():
     if not api: return "No Garmin data link."
     today = get_today_str()
     try:
+        # Get Steps
+        summary = api.get_user_summary(today)
+        steps = summary.get('totalSteps', 0)
+        step_str = f"👣 Steps: {steps}\n"
+        
+        # Get Workouts
         activities = api.get_activities_by_date(today, today)
-        if not activities: return "No workouts logged today."
-        report = ""
+        if not activities: 
+            return step_str + "No workouts logged today."
+        
+        report = step_str + "Workouts:\n"
         for act in activities:
             name = act.get('activityName', 'Activity')
             cals = act.get('calories', 0)
             duration = round(act.get('duration', 0) / 60, 1)
-            report += f"{name}: {duration}m | {cals}kcal\n"
+            report += f"- {name}: {duration}m | {cals}kcal\n"
         return report
     except: return "Garmin sync error."
 
@@ -106,7 +114,7 @@ def run_report_for_user(tg_id):
     weight = user_data.get('weight', "Not recorded")
 
     # Added formatting instruction to prompt
-    prompt = (f"Analyze: Cals Consumed:{cals}, Weight:{weight}kg, Workouts:{workouts}. "
+    prompt = (f"Analyze: Cals Consumed:{cals}, Weight:{weight}kg, {workouts}. "
               "Give a smart coaching summary. DO NOT use underscores (_) and use minimal bolding.")
     
     analysis = get_gemini_response(tg_id, prompt)
@@ -172,8 +180,9 @@ def handle_input(message):
     if any(w in text for w in ["workout", "exercise", "activity"]):
         bot.reply_to(message, fetch_workout_details())
     elif "kg" in text or "weight" in text:
-        res = get_gemini_response(tg_id, f"Extract number from {text}")
-        val = "".join(re.findall(r"[-+]?\d*\.\d+|\d+", res))
+        res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
+        match = re.search(r"[-+]?\d*\.?\d+", res)
+        val = match.group(0) if match else None
         if val:
             sync_to_supabase(tg_id, today, {"weight": val})
             bot.reply_to(message, f"⚖️ {val}kg logged.")
