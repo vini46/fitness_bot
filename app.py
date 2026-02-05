@@ -205,13 +205,18 @@ def handle_input(message):
             sync_to_supabase(tg_id, today, {"weight": val})
             bot.reply_to(message, f"⚖️ {val}kg logged.")
     elif any(w in text for w in ["ate", "had", "lunch", "dinner"]):
-        res = get_gemini_response(tg_id, f"Calories for {text}. Int only.")
-        cals = "".join(filter(str.isdigit, res))
-        if cals:
-            user_data = get_user_data(tg_id, today)
-            new_total = (user_data.get('calories_consumed') or 0) + int(cals)
-            sync_to_supabase(tg_id, today, {"calories_consumed": new_total})
-            bot.reply_to(message, f"🍎 Logged {cals} kcal. Total: {new_total}")
+        res = get_gemini_response(tg_id, f"Identify the total calories in: '{text}'. Output ONLY the number.")
+        match = re.search(r"\d+", res)
+        cals_val = int(match.group(0)) if match else None
+        
+        if cals_val is not None:
+            if cals_val > 10000:
+                bot.reply_to(message, "⚠️ That seems like too many calories! Please check the entry or try again.")
+            else:
+                user_data = get_user_data(tg_id, today)
+                new_total = (user_data.get('calories_consumed') or 0) + cals_val
+                sync_to_supabase(tg_id, today, {"calories_consumed": new_total})
+                bot.reply_to(message, f"🍎 Logged {cals_val} kcal. Total: {new_total}")
     else:
         bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
 
