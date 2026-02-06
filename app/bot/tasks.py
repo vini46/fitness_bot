@@ -21,7 +21,7 @@ def get_unique_users():
         logger.error(f"Error fetching unique users: {e}")
         return []
 
-def run_report_for_user(tg_id):
+def run_report_for_user(tg_id, mode="evening"):
     today = get_today_str()
     user_data = get_user_data(tg_id, today)
     if not user_data or not user_data.get('gemini_key'): return
@@ -32,10 +32,15 @@ def run_report_for_user(tg_id):
     cals = user_data.get('calories_consumed', 0)
     weight = user_data.get('weight', "Not recorded")
 
-    prompt = (f"Analyze: Cals Consumed:{cals}, Weight:{weight}kg, {workouts}. "
-              f"Advanced Metrics: {advanced}. "
-              "Give a smart coaching summary. Highlight recovery if Body Battery or Sleep is low. "
-              "DO NOT use underscores (_) and use minimal bolding.")
+    if mode == "morning":
+        prompt = (f"Kickoff the day for the user. Context: Weight:{weight}kg, {advanced}. "
+                  "Focus on sleep quality and recovery from last night. Suggest an activity goal for today. "
+                  "Keep it high-energy and motivating. DO NOT use underscores (_) and use minimal bolding.")
+    else:
+        prompt = (f"Winddown report. Today's stats: Cals Consumed:{cals}, Weight:{weight}kg, {workouts}. "
+                  f"Recovery Metrics: {advanced}. "
+                  "Summarize today's achievements. If recovery (Body Battery/Sleep) is low, suggest early sleep. "
+                  "Keep it reflective and encouraging. DO NOT use underscores (_) and use minimal bolding.")
     
     analysis = get_gemini_response(tg_id, prompt)
     
@@ -46,10 +51,22 @@ def run_report_for_user(tg_id):
     clean_analysis = analysis.replace("_", "-").replace("[", "(").replace("]", ")")
 
     try:
-        bot.send_message(tg_id, f"📊 *HEALTH SUMMARY*\n\n{clean_analysis}", parse_mode="Markdown")
+        title = "🌅 *MORNING KICKOFF*" if mode == "morning" else "📊 *HEALTH SUMMARY*"
+        bot.send_message(tg_id, f"{title}\n\n{clean_analysis}", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Markdown failed for {tg_id}: {e}. Sending plain text.")
-        bot.send_message(tg_id, f"📊 HEALTH SUMMARY\n\n{analysis}")
+        title_plain = "🌅 MORNING KICKOFF" if mode == "morning" else "📊 HEALTH SUMMARY"
+        bot.send_message(tg_id, f"{title_plain}\n\n{analysis}")
+
+def multi_user_kickoff_9am():
+    logger.info("Starting scheduled 9am kickoff job.")
+    all_users = get_unique_users()
+    for user_id in all_users:
+        try:
+            time.sleep(random.uniform(2, 5))
+            run_report_for_user(user_id, mode="morning")
+        except Exception as e:
+            logger.error(f"Error in 9am kickoff for {user_id}: {e}")
 
 def multi_user_report_9pm():
     logger.info("Starting scheduled 9pm report job.")
@@ -57,7 +74,7 @@ def multi_user_report_9pm():
     for user_id in all_users:
         try:
             time.sleep(random.uniform(2, 5))
-            run_report_for_user(user_id)
+            run_report_for_user(user_id, mode="evening")
         except Exception as e:
             logger.error(f"Error in 9pm report for {user_id}: {e}")
 
@@ -143,7 +160,11 @@ def startup_catchup():
     now = datetime.datetime.now(IST)
     hr = now.hour
     
-    # 1. Catch 8 AM Morning Reminder if bot starts later
+    # 0. Catch 9 AM Kickoff
+    if hr >= 9:
+        multi_user_kickoff_9am()
+        
+    # 1. Catch 8 AM Morning Reminder
     if hr >= 8:
         morning_reminder()
         
