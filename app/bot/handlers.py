@@ -44,14 +44,17 @@ def register_handlers():
 
         if any(w in text for w in ["workout", "exercise", "activity", "steps", "step", "walk"]):
             bot.reply_to(message, fetch_workout_details(tg_id))
-        elif "kg" in text or "weight" in text:
+        elif ("kg" in text or "weight" in text) and any(c.isdigit() for c in text):
             res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
             match = re.search(r"[-+]?\d*\.?\d+", res)
             val = match.group(0) if match else None
             if val:
                 sync_to_supabase(tg_id, today, {"weight": val})
                 bot.reply_to(message, f"⚖️ {val}kg logged.")
-        elif any(w in text for w in ["ate", "had", "lunch", "dinner"]):
+            else:
+                # Fallback to chat if extraction fails
+                bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+        elif any(w in text for w in ["ate", "had", "lunch", "dinner"]) and any(c.isdigit() for c in text):
             res = get_gemini_response(tg_id, f"Identify the total calories in: '{text}'. Output ONLY the number.")
             match = re.search(r"\d+", res)
             cals_val = int(match.group(0)) if match else None
@@ -64,5 +67,8 @@ def register_handlers():
                     new_total = (user_data.get('calories_consumed') or 0) + cals_val
                     sync_to_supabase(tg_id, today, {"calories_consumed": new_total})
                     bot.reply_to(message, f"🍎 Logged {cals_val} kcal. Total: {new_total}")
+            else:
+                # Fallback to chat if extraction fails
+                bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
         else:
             bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
