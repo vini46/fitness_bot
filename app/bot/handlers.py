@@ -34,7 +34,14 @@ def register_handlers():
     @bot.message_handler(commands=['report'])
     def manual_report(message):
         bot.send_chat_action(message.chat.id, 'typing')
-        run_report_for_user(message.chat.id)
+        parts = message.text.split()
+        mode = "evening" # default
+        if len(parts) > 1:
+            arg = parts[1].lower()
+            if arg in ["morning", "kickoff", "9am"]:
+                mode = "morning"
+        
+        run_report_for_user(message.chat.id, mode=mode)
 
     @bot.message_handler(commands=['set_garmin'])
     def set_garmin(message):
