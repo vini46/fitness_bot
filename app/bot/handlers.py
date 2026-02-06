@@ -8,6 +8,22 @@ from app.services.gemini import get_gemini_response
 
 logger = logging.getLogger(__name__)
 
+def sanitize_markdown(text):
+    """Remove or escape characters that break Telegram Markdown parsing."""
+    if not text: return ""
+    # Gemini often uses single * which breaks things. Let's convert them to - or ensure they match.
+    # For now, simplest is to replace _ which is very problematic in Markdown V1
+    return text.replace("_", "\\_").replace("[", "\\[").replace("]", "\\]")
+
+def safe_reply(message, text, parse_mode="Markdown"):
+    """Try to send with Markdown, fallback to plain text if it fails."""
+    sanitized = sanitize_markdown(text)
+    try:
+        bot.reply_to(message, sanitized, parse_mode=parse_mode)
+    except Exception as e:
+        logger.error(f"Markdown failed: {e}. Falling back to plain text.")
+        bot.reply_to(message, text.replace("*", "").replace("_", ""))
+
 def register_handlers():
     @bot.message_handler(commands=['set_key'])
     def set_key(message):
@@ -56,7 +72,7 @@ def register_handlers():
                       f"Keep it encouraging and concise:\n\n{history_str}")
             
             analysis = get_gemini_response(tg_id, prompt)
-            bot.reply_to(message, f"⚖️ *Weight Progress Analysis*\n\n{analysis}", parse_mode="Markdown")
+            safe_reply(message, f"⚖️ *Weight Progress Analysis*\n\n{analysis}")
         elif ("kg" in text or "weight" in text) and any(c.isdigit() for c in text):
             res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
             match = re.search(r"[-+]?\d*\.?\d+", res)
@@ -66,7 +82,7 @@ def register_handlers():
                 bot.reply_to(message, f"⚖️ {val}kg logged.")
             else:
                 # Fallback to chat if extraction fails
-                bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+                safe_reply(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
         elif any(w in text for w in ["ate", "had", "lunch", "dinner"]) and any(c.isdigit() for c in text):
             res = get_gemini_response(tg_id, f"Identify the total calories in: '{text}'. Output ONLY the number.")
             match = re.search(r"\d+", res)
@@ -82,6 +98,6 @@ def register_handlers():
                     bot.reply_to(message, f"🍎 Logged {cals_val} kcal. Total: {new_total}")
             else:
                 # Fallback to chat if extraction fails
-                bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+                safe_reply(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
         else:
-            bot.reply_to(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+            safe_reply(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
