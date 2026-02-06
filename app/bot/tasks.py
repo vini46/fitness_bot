@@ -26,12 +26,16 @@ def run_report_for_user(tg_id):
     user_data = get_user_data(tg_id, today)
     if not user_data or not user_data.get('gemini_key'): return
 
+    from app.services.garmin import fetch_workout_details, fetch_advanced_metrics
     workouts = fetch_workout_details(tg_id)
+    advanced = fetch_advanced_metrics(tg_id)
     cals = user_data.get('calories_consumed', 0)
     weight = user_data.get('weight', "Not recorded")
 
     prompt = (f"Analyze: Cals Consumed:{cals}, Weight:{weight}kg, {workouts}. "
-              "Give a smart coaching summary. DO NOT use underscores (_) and use minimal bolding.")
+              f"Advanced Metrics: {advanced}. "
+              "Give a smart coaching summary. Highlight recovery if Body Battery or Sleep is low. "
+              "DO NOT use underscores (_) and use minimal bolding.")
     
     analysis = get_gemini_response(tg_id, prompt)
     

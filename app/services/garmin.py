@@ -78,4 +78,36 @@ def fetch_workout_details(tg_id):
             duration = round(act.get('duration', 0) / 60, 1)
             report += f"- {name}: {duration}m | {cals}kcal\n"
         return report
+        return report
     except: return "Garmin sync error."
+
+def fetch_advanced_metrics(tg_id):
+    api = get_garmin_client(tg_id)
+    if not api: return ""
+    today = get_today_str()
+    metrics = []
+    try:
+        # 1. Sleep Data
+        sleep = api.get_sleep_data(today)
+        if sleep and 'dailySleepDTO' in sleep:
+            dto = sleep['dailySleepDTO']
+            score = dto.get('sleepScore', 'N/A')
+            hours = round(dto.get('sleepTimeSeconds', 0) / 3600, 1)
+            metrics.append(f"💤 Sleep: {hours}h (Score: {score})")
+            
+        # 2. Body Battery
+        bb = api.get_body_battery(today)
+        if bb:
+            current_bb = bb[-1].get('bodyBatteryValue', 'N/A') if bb else 'N/A'
+            metrics.append(f"🔋 Body Battery: {current_bb}/100")
+            
+        # 3. Stress
+        stress = api.get_stress_data(today)
+        if stress and 'stressChartDTO' in stress:
+            avg_stress = stress.get('avgStressLevel', 'N/A')
+            metrics.append(f"🧘 Stress Level: {avg_stress}")
+            
+        return "\n".join(metrics)
+    except Exception as e:
+        print(f"Advanced metrics error: {e}")
+        return ""
