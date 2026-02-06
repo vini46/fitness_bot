@@ -2,7 +2,7 @@ import re
 import logging
 from app.bot.bot_instance import bot
 from app.bot.tasks import run_report_for_user
-from app.database import get_user_data, sync_to_supabase
+from app.database import get_user_data, sync_to_supabase, get_weight_history
 from app.services.garmin import fetch_workout_details, get_today_str
 from app.services.gemini import get_gemini_response
 
@@ -44,6 +44,19 @@ def register_handlers():
 
         if any(w in text for w in ["workout", "exercise", "activity", "steps", "step", "walk"]):
             bot.reply_to(message, fetch_workout_details(tg_id))
+        elif "weight" in text and any(w in text for w in ["progress", "history", "trend", "looking"]):
+            # Historical Weight Analysis
+            history = get_weight_history(tg_id)
+            if not history:
+                bot.reply_to(message, "I don't have any weight logs for you yet! Log your weight by saying something like '75kg'.")
+                return
+            
+            history_str = "\n".join([f"{row['log_date']}: {row['weight']}kg" for row in history])
+            prompt = (f"Review this weight history and provide a thoughtful coaching analysis on progress and trends. "
+                      f"Keep it encouraging and concise:\n\n{history_str}")
+            
+            analysis = get_gemini_response(tg_id, prompt)
+            bot.reply_to(message, f"⚖️ *Weight Progress Analysis*\n\n{analysis}", parse_mode="Markdown")
         elif ("kg" in text or "weight" in text) and any(c.isdigit() for c in text):
             res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
             match = re.search(r"[-+]?\d*\.?\d+", res)

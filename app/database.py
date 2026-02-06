@@ -66,3 +66,16 @@ def sync_to_supabase(tg_id, date_str, updates):
     
     # Upsert the full record
     supabase.table("user_configs").upsert(updated_row, on_conflict="telegram_id, log_date").execute()
+
+def get_weight_history(tg_id):
+    try:
+        res = (supabase.table("user_configs")
+               .select("log_date, weight")
+               .eq("telegram_id", str(tg_id))
+               .not_.is_("weight", "null")
+               .order("log_date", desc=False)
+               .execute())
+        return res.data
+    except Exception as e:
+        logger.error(f"Error fetching weight history for {tg_id}: {e}")
+        return []
