@@ -37,9 +37,15 @@ def run_report_for_user(tg_id, mode="evening"):
                   "Focus on sleep quality and recovery from last night. Suggest an activity goal for today. "
                   "Keep it high-energy and motivating. DO NOT use underscores (_) and use minimal bolding.")
     else:
-        prompt = (f"Winddown report. Today's stats: Cals Consumed:{cals}, Weight:{weight}kg, {workouts}. "
-                  f"Recovery Metrics: {advanced}. "
-                  "Summarize today's achievements. If recovery (Body Battery/Sleep) is low, suggest early sleep. "
+        # Use a fallback note if manual calories are 0 but Garmin has data
+        nutrition_context = f"Manual Calories Logged: {cals}"
+        if cals == 0 and "MFP Nutrition" in advanced:
+            nutrition_context = "User didn't log food manually, but MyFitnessPal data is available. Use that for analysis."
+            
+        prompt = (f"Winddown report. Today's stats: {nutrition_context}, Weight:{weight}kg, {workouts}. "
+                  f"Recovery & Nutrition Metrics: {advanced}. "
+                  "Summarize today's achievements. Analyze nutrition and macro balance if data is present. "
+                  "If recovery (Body Battery/Sleep) is low, suggest early sleep. "
                   "Keep it reflective and encouraging. DO NOT use underscores (_) and use minimal bolding.")
     
     analysis = get_gemini_response(tg_id, prompt)

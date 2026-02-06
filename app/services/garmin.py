@@ -107,6 +107,15 @@ def fetch_advanced_metrics(tg_id):
             avg_stress = stress.get('avgStressLevel', 'N/A')
             metrics.append(f"🧘 Stress Level: {avg_stress}")
             
+        # 4. Nutrition (MyFitnessPal Sync)
+        summary = api.get_user_summary(today)
+        mfp_cals = summary.get('caloriesConsumed', 0)
+        if mfp_cals > 0:
+            protein = summary.get('proteinGrams', 0)
+            carbs = summary.get('carbsGrams', 0)
+            fat = summary.get('fatGrams', 0)
+            metrics.append(f"🍎 MFP Nutrition: {mfp_cals} kcal (P:{protein}g, C:{carbs}g, F:{fat}g)")
+            
         return "\n".join(metrics)
     except Exception as e:
         print(f"Advanced metrics error: {e}")
