@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 def get_unique_users():
     try:
-        res = supabase.table("user_configs").select("telegram_id").execute()
-        unique_users = list(set([row['telegram_id'] for row in res.data]))
-        logger.info(f"Fetched {len(unique_users)} unique users from {len(res.data)} total records.")
+        res = supabase.table("users").select("telegram_id").execute()
+        unique_users = [row['telegram_id'] for row in res.data]
+        logger.info(f"Fetched {len(unique_users)} users from the new users table.")
         return unique_users
     except Exception as e:
         logger.error(f"Error fetching unique users: {e}")

@@ -1,77 +1,62 @@
 from supabase import create_client, Client
 from app.config import SUPABASE_URL, SUPABASE_KEY
+import logging
 
+logger = logging.getLogger(__name__)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_user_data(tg_id, date_str):
-    # Try to get existing record for the specific date
-    res = supabase.table("user_configs").select("*").eq("telegram_id", str(tg_id)).eq("log_date", date_str).execute()
-    data = res.data[0] if res.data else {}
-    
-    # Independently propagate gemini_key if missing today
-    if not data.get('gemini_key'):
-        recent_key = (supabase.table("user_configs")
-                      .select("gemini_key")
-                      .eq("telegram_id", str(tg_id))
-                      .not_.is_("gemini_key", "null")
-                      .order("log_date", desc=True)
-                      .limit(1)
-                      .execute())
-        if recent_key.data:
-            data['gemini_key'] = recent_key.data[0]['gemini_key']
+    """Fetch user settings and daily metrics in a single logical view."""
+    try:
+        # 1. Fetch from 'users'
+        user_res = supabase.table("users").select("*").eq("telegram_id", str(tg_id)).execute()
+        user_info = user_res.data[0] if user_res.data else {}
 
-    # Independently propagate garmin_session if missing today
-    if not data.get('garmin_session'):
-        recent_gs = (supabase.table("user_configs")
-                     .select("garmin_session")
-                     .eq("telegram_id", str(tg_id))
-                     .not_.is_("garmin_session", "null")
-                     .order("log_date", desc=True)
-                     .limit(1)
-                     .execute())
-        if recent_gs.data:
-            data['garmin_session'] = recent_gs.data[0]['garmin_session']
-            
-    # Independently propagate last_notified if missing today
-    if not data.get('last_notified'):
-        recent_ln = (supabase.table("user_configs")
-                     .select("last_notified")
-                     .eq("telegram_id", str(tg_id))
-                     .not_.is_("last_notified", "null")
-                     .order("log_date", desc=True)
-                     .limit(1)
-                     .execute())
-        if recent_ln.data:
-            data['last_notified'] = recent_ln.data[0]['last_notified']
-        else:
-            data['last_notified'] = {}
-            
-    # Ensure standard fields exist if it's a new dict
-    if 'calories_consumed' not in data: data['calories_consumed'] = 0
-    if 'weight' not in data: data['weight'] = None
-    
-    return data
+        # 2. Fetch from 'daily_metrics'
+        metrics_res = (supabase.table("daily_metrics")
+                      .select("*")
+                      .eq("user_id", str(tg_id))
+                      .eq("log_date", date_str)
+                      .execute())
+        metrics_info = metrics_res.data[0] if metrics_res.data else {}
+
+        # Merge for backward compatibility in the rest of the app
+        # This allows the rest of the code to still access things like 'gemini_key' directly
+        return {**user_info, **metrics_info}
+    except Exception as e:
+        logger.error(f"Error fetching data for {tg_id}: {e}")
+        return {}
 
 def sync_to_supabase(tg_id, date_str, updates):
-    # Fetch current data to ensure we don't overwrite other fields (like keys or sessions)
-    current_data = get_user_data(tg_id, date_str)
-    
-    # Merge existing data with new updates
-    updated_row = {
-        "telegram_id": str(tg_id),
-        "log_date": date_str,
-        **current_data,
-        **updates
-    }
-    
-    # Upsert the full record
-    supabase.table("user_configs").upsert(updated_row, on_conflict="telegram_id, log_date").execute()
+    """Update users or daily_metrics as appropriate."""
+    try:
+        tg_id_str = str(tg_id)
+        
+        # Split updates into 'users' fields and 'daily_metrics' fields
+        user_fields = ["gemini_key", "timezone"]
+        metrics_fields = ["weight", "calories_consumed", "steps", "sleep_score", "body_battery", "stress_level", "last_notified"]
+        
+        u_updates = {k: v for k, v in updates.items() if k in user_fields}
+        m_updates = {k: v for k, v in updates.items() if k in metrics_fields}
+
+        if u_updates:
+            u_updates["telegram_id"] = tg_id_str
+            supabase.table("users").upsert(u_updates, on_conflict="telegram_id").execute()
+
+        if m_updates:
+            m_updates["user_id"] = tg_id_str
+            m_updates["log_date"] = date_str
+            supabase.table("daily_metrics").upsert(m_updates, on_conflict="user_id, log_date").execute()
+
+    except Exception as e:
+        logger.error(f"Error syncing to Supabase for {tg_id}: {e}")
 
 def get_weight_history(tg_id):
+    """Retrieve weight history from the daily_metrics table."""
     try:
-        res = (supabase.table("user_configs")
+        res = (supabase.table("daily_metrics")
                .select("log_date, weight")
-               .eq("telegram_id", str(tg_id))
+               .eq("user_id", str(tg_id))
                .not_.is_("weight", "null")
                .order("log_date", desc=False)
                .execute())

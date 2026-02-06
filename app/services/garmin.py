@@ -7,15 +7,22 @@ from garminconnect import Garmin
 from app.config import IST
 
 def get_garmin_client(tg_id):
-    from app.database import get_user_data
-    user_info = get_user_data(tg_id, get_today_str())
-    if not user_info or not user_info.get('garmin_session'):
+    from app.database import supabase
+    # Fetch from 'user_integrations' table
+    res = (supabase.table("user_integrations")
+           .select("session_data")
+           .eq("user_id", str(tg_id))
+           .eq("provider", "garmin")
+           .eq("is_active", True)
+           .execute())
+    
+    if not res.data:
         return None
     
     # Create a temp dir to load the session
     tmp_dir = tempfile.mkdtemp()
     try:
-        session_data = user_info['garmin_session']
+        session_data = res.data[0]['session_data']
         for filename, content in session_data.items():
             with open(os.path.join(tmp_dir, filename), 'w') as f:
                 json.dump(content, f)
@@ -30,7 +37,7 @@ def get_garmin_client(tg_id):
         shutil.rmtree(tmp_dir)
 
 def login_user_to_garmin(tg_id, email, password):
-    from app.database import sync_to_supabase
+    from app.database import supabase
     tmp_dir = tempfile.mkdtemp()
     try:
         api = Garmin(email, password)
@@ -45,7 +52,14 @@ def login_user_to_garmin(tg_id, email, password):
                 with open(file_path, 'r') as f:
                     session_dict[filename] = json.load(f)
         
-        sync_to_supabase(tg_id, get_today_str(), {"garmin_session": session_dict})
+        # Save to 'user_integrations'
+        integration_row = {
+            "user_id": str(tg_id),
+            "provider": "garmin",
+            "session_data": session_dict,
+            "is_active": True
+        }
+        supabase.table("user_integrations").upsert(integration_row, on_conflict="user_id, provider").execute()
         return True
     except Exception as e:
         print(f"Garmin login error for {tg_id}: {e}")
