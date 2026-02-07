@@ -100,28 +100,37 @@ def fetch_advanced_metrics(tg_id):
     if not api: return ""
     today = get_today_str()
     metrics = []
+    # 1. Sleep Data
     try:
-        # 1. Sleep Data
         sleep = api.get_sleep_data(today)
         if sleep and 'dailySleepDTO' in sleep:
             dto = sleep['dailySleepDTO']
             score = dto.get('sleepScore', 'N/A')
             hours = round(dto.get('sleepTimeSeconds', 0) / 3600, 1)
             metrics.append(f"💤 Sleep: {hours}h (Score: {score})")
-            
-        # 2. Body Battery
+    except Exception as e:
+        logger.error(f"Sleep fetch error: {e}")
+
+    # 2. Body Battery
+    try:
         bb = api.get_body_battery(today)
         if bb:
-            current_bb = bb[-1].get('bodyBatteryValue', 'N/A') if bb else 'N/A'
+            current_bb = bb[-1].get('bodyBatteryValue', 'N/A')
             metrics.append(f"🔋 Body Battery: {current_bb}/100")
-            
-        # 3. Stress
+    except Exception as e:
+        logger.error(f"Body Battery fetch error: {e}")
+
+    # 3. Stress
+    try:
         stress = api.get_stress_data(today)
         if stress and 'stressChartDTO' in stress:
             avg_stress = stress.get('avgStressLevel', 'N/A')
             metrics.append(f"🧘 Stress Level: {avg_stress}")
-            
-        # 4. Nutrition (MyFitnessPal Sync)
+    except Exception as e:
+        logger.error(f"Stress fetch error: {e}")
+
+    # 4. Nutrition (MyFitnessPal Sync)
+    try:
         summary = api.get_user_summary(today)
         mfp_cals = summary.get('caloriesConsumed', 0)
         if mfp_cals > 0:
@@ -129,8 +138,7 @@ def fetch_advanced_metrics(tg_id):
             carbs = summary.get('carbsGrams', 0)
             fat = summary.get('fatGrams', 0)
             metrics.append(f"🍎 MFP Nutrition: {mfp_cals} kcal (P:{protein}g, C:{carbs}g, F:{fat}g)")
-            
-        return "\n".join(metrics)
     except Exception as e:
-        print(f"Advanced metrics error: {e}")
-        return ""
+        logger.error(f"Nutrition fetch error: {e}")
+
+    return "\n".join(metrics)
