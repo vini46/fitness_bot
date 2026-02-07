@@ -28,22 +28,29 @@ def run_report_for_user(tg_id, mode="evening"):
 
     from app.services.garmin import fetch_workout_details, fetch_advanced_metrics
     workouts = fetch_workout_details(tg_id)
-    advanced = fetch_advanced_metrics(tg_id)
+    advanced_str, advanced_data = fetch_advanced_metrics(tg_id)
+    
+    # Persist the advanced metrics to database
+    if advanced_data:
+        sync_to_supabase(tg_id, today, advanced_data)
+        # Refresh user_data to get the newly synced calories/metrics
+        user_data = get_user_data(tg_id, today)
+
     cals = user_data.get('calories_consumed', 0)
     weight = user_data.get('weight', "Not recorded")
 
     if mode == "morning":
-        prompt = (f"Kickoff the day for the user. Context: Weight:{weight}kg, {advanced}. "
+        prompt = (f"Kickoff the day for the user. Context: Weight:{weight}kg, {advanced_str}. "
                   "Focus on sleep quality and recovery from last night. Suggest an activity goal for today. "
                   "Keep it high-energy and motivating. DO NOT use underscores (_) and use minimal bolding.")
     else:
         # Use a fallback note if manual calories are 0 but Garmin has data
         nutrition_context = f"Manual Calories Logged: {cals}"
-        if cals == 0 and "MFP Nutrition" in advanced:
+        if cals == 0 and "MFP Nutrition" in advanced_str:
             nutrition_context = "User didn't log food manually, but MyFitnessPal data is available. Use that for analysis."
             
         prompt = (f"Winddown report. Today's stats: {nutrition_context}, Weight:{weight}kg, {workouts}. "
-                  f"Recovery & Nutrition Metrics: {advanced}. "
+                  f"Recovery & Nutrition Metrics: {advanced_str}. "
                   "Summarize today's achievements. Analyze nutrition and macro balance if data is present. "
                   "If recovery (Body Battery/Sleep) is low, suggest early sleep. "
                   "Keep it reflective and encouraging. DO NOT use underscores (_) and use minimal bolding.")

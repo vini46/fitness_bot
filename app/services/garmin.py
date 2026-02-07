@@ -97,17 +97,20 @@ def fetch_workout_details(tg_id):
 
 def fetch_advanced_metrics(tg_id):
     api = get_garmin_client(tg_id)
-    if not api: return ""
+    if not api: return "", {}
     today = get_today_str()
-    metrics = []
+    metrics_str = []
+    metrics_data = {}
+    
     # 1. Sleep Data
     try:
         sleep = api.get_sleep_data(today)
         if sleep and 'dailySleepDTO' in sleep:
             dto = sleep['dailySleepDTO']
-            score = dto.get('sleepScore', 'N/A')
+            score = dto.get('sleepScore')
             hours = round(dto.get('sleepTimeSeconds', 0) / 3600, 1)
-            metrics.append(f"💤 Sleep: {hours}h (Score: {score})")
+            metrics_str.append(f"💤 Sleep: {hours}h (Score: {score})")
+            if score: metrics_data['sleep_score'] = score
     except Exception as e:
         logger.error(f"Sleep fetch error: {e}")
 
@@ -115,8 +118,9 @@ def fetch_advanced_metrics(tg_id):
     try:
         bb = api.get_body_battery(today)
         if bb:
-            current_bb = bb[-1].get('bodyBatteryValue', 'N/A')
-            metrics.append(f"🔋 Body Battery: {current_bb}/100")
+            current_bb = bb[-1].get('bodyBatteryValue')
+            metrics_str.append(f"🔋 Body Battery: {current_bb}/100")
+            if current_bb: metrics_data['body_battery'] = current_bb
     except Exception as e:
         logger.error(f"Body Battery fetch error: {e}")
 
@@ -124,8 +128,9 @@ def fetch_advanced_metrics(tg_id):
     try:
         stress = api.get_stress_data(today)
         if stress and 'stressChartDTO' in stress:
-            avg_stress = stress.get('avgStressLevel', 'N/A')
-            metrics.append(f"🧘 Stress Level: {avg_stress}")
+            avg_stress = stress.get('avgStressLevel')
+            metrics_str.append(f"🧘 Stress Level: {avg_stress}")
+            if avg_stress: metrics_data['stress_level'] = avg_stress
     except Exception as e:
         logger.error(f"Stress fetch error: {e}")
 
@@ -137,8 +142,20 @@ def fetch_advanced_metrics(tg_id):
             protein = summary.get('proteinGrams', 0)
             carbs = summary.get('carbsGrams', 0)
             fat = summary.get('fatGrams', 0)
-            metrics.append(f"🍎 MFP Nutrition: {mfp_cals} kcal (P:{protein}g, C:{carbs}g, F:{fat}g)")
+            metrics_str.append(f"🍎 MFP Nutrition: {mfp_cals} kcal (P:{protein}g, C:{carbs}g, F:{fat}g)")
+            metrics_data['calories_consumed'] = mfp_cals
     except Exception as e:
         logger.error(f"Nutrition fetch error: {e}")
 
-    return "\n".join(metrics)
+    # 5. Steps
+    try:
+        steps_data = api.get_steps_data(today)
+        if steps_data:
+            total_steps = sum([day.get('steps', 0) for day in steps_data])
+            metrics_data['steps'] = total_steps
+            # We don't necessarily need to add steps to the 'advanced' string as it's often fetched elsewhere,
+            # but we include it in the data_dict for persistence.
+    except Exception as e:
+        logger.error(f"Steps fetch error: {e}")
+
+    return "\n".join(metrics_str), metrics_data
