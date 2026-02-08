@@ -1,5 +1,7 @@
 # 🤖 Personal Coach Bot
 
+![App Status](https://img.shields.io/website?url=https%3A%2F%2Fharsh-pansie-vbvini-1199210e.koyeb.app%2F&label=App%20Status)
+
 An AI-powered health and fitness companion that lives in Telegram. It integrates with Garmin and MyFitnessPal to provide personalized coaching, health summaries, and proactive nudges.
 
 ---
