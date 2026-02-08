@@ -3,8 +3,11 @@ import datetime
 import tempfile
 import json
 import shutil
+import logging
 from garminconnect import Garmin
 from app.config import IST
+
+logger = logging.getLogger(__name__)
 
 def get_garmin_client(tg_id):
     from app.database import supabase
@@ -117,22 +120,32 @@ def fetch_advanced_metrics(tg_id):
     # 2. Body Battery
     try:
         bb = api.get_body_battery(today)
-        if bb:
-            current_bb = bb[-1].get('bodyBatteryValue')
-            metrics_str.append(f"🔋 Body Battery: {current_bb}/100")
-            if current_bb: metrics_data['body_battery'] = current_bb
+        if bb and isinstance(bb, list):
+            # Sort by date if possible, but usually it's chronological
+            # Filter out entries where bodyBatteryValue is None
+            valid_bb = [b for b in bb if b.get('bodyBatteryValue') is not None]
+            if valid_bb:
+                current_bb = valid_bb[-1].get('bodyBatteryValue')
+                metrics_str.append(f"🔋 Body Battery: {current_bb}/100")
+                metrics_data['body_battery'] = current_bb
+            else:
+                logger.info(f"No valid Body Battery entries found in list for {tg_id}")
     except Exception as e:
-        logger.error(f"Body Battery fetch error: {e}")
+        logger.error(f"Body Battery fetch error for {tg_id}: {e}")
 
     # 3. Stress
     try:
         stress = api.get_stress_data(today)
-        if stress and 'stressChartDTO' in stress:
+        if stress:
             avg_stress = stress.get('avgStressLevel')
-            metrics_str.append(f"🧘 Stress Level: {avg_stress}")
-            if avg_stress: metrics_data['stress_level'] = avg_stress
+            if avg_stress is not None and avg_stress != 'N/A':
+                metrics_str.append(f"🧘 Stress Level: {avg_stress}")
+                metrics_data['stress_level'] = avg_stress
+            else:
+                # Some accounts might have it under a different key or it's just not populated yet
+                logger.info(f"Stress data found but avgStressLevel is missing or N/A for {tg_id}")
     except Exception as e:
-        logger.error(f"Stress fetch error: {e}")
+        logger.error(f"Stress fetch error for {tg_id}: {e}")
 
     # 4. Nutrition (MyFitnessPal Sync)
     try:

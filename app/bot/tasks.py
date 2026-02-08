@@ -40,7 +40,7 @@ def run_report_for_user(tg_id, mode="evening"):
     weight = user_data.get('weight', "Not recorded")
 
     if mode == "morning":
-        prompt = (f"Kickoff the day for the user. Context: Weight:{weight}kg, {advanced_str}. "
+        prompt = (f"Kickoff the day for the user. Context: Weight:{weight}kg, {advanced_str}, {workouts}. "
                   "Focus on sleep quality and recovery from last night. Suggest an activity goal for today. "
                   "Keep it high-energy and motivating. DO NOT use underscores (_) and use minimal bolding.")
     else:

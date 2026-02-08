@@ -16,13 +16,23 @@ def sanitize_markdown(text):
     return text.replace("_", "\\_").replace("[", "\\[").replace("]", "\\]")
 
 def safe_reply(message, text, parse_mode="Markdown"):
-    """Try to send with Markdown, fallback to plain text if it fails."""
-    sanitized = sanitize_markdown(text)
-    try:
-        bot.reply_to(message, sanitized, parse_mode=parse_mode)
-    except Exception as e:
-        logger.error(f"Markdown failed: {e}. Falling back to plain text.")
-        bot.reply_to(message, text.replace("*", "").replace("_", ""))
+    """Splits long messages and sends them safely with Markdown fallback."""
+    if not text: return
+    
+    # Telegram limit is 4096, we use 4000 to be safe
+    MAX_LENGTH = 4000
+    chunks = [text[i:i + MAX_LENGTH] for i in range(0, len(text), MAX_LENGTH)]
+    
+    for chunk in chunks:
+        sanitized = sanitize_markdown(chunk)
+        try:
+            bot.reply_to(message, sanitized, parse_mode=parse_mode)
+        except Exception as e:
+            logger.error(f"Markdown failed for chunk: {e}. Falling back to plain text.")
+            try:
+                bot.reply_to(message, chunk.replace("*", "").replace("_", ""))
+            except Exception as e2:
+                logger.error(f"Final fallback failed: {e2}")
 
 def register_handlers():
     @bot.message_handler(commands=['set_key'])
