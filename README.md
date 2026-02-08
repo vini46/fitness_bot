@@ -18,6 +18,25 @@ An AI-powered health and fitness companion that lives in Telegram. It integrates
 
 ---
 
+## 📱 User Guide: Start Coaching
+
+Follow these steps to get your personal AI coach running in minutes:
+
+1.  **Find the Bot**: Search for [@fitVinod_bot](https://t.me/fitVinod_bot) on Telegram and press **Start**.
+2.  **Set your AI Key**: (Only if self-hosting) Send `/set_key your_api_key` to give the bot its "brain."
+3.  **Link Garmin**: Send `/set_garmin your_email your_password`. 
+    - *Tip: This syncs your steps, sleep, and MyFitnessPal nutrition data automatically.*
+4.  **Log your Weight**: Simply type `85kg` or `My weight is 85.5` anytime. The bot will track your progress.
+5.  **Log your Food**: Type `I had a 500 kcal lunch` to track calories manually if you don't use MyFitnessPal.
+6.  **Ask Questions**: Ask the coach anything! e.g., *"Why is my body battery low?"* or *"How was my sleep last night?"*
+
+### 🎮 Commands
+- `/report`: Get an instant health summary (Morning or Evening).
+- `/set_garmin`: Link your Garmin Connect account.
+- `/set_key`: Configure your Gemini API key.
+
+---
+
 ## 🏗 Architecture
 
 - **Language**: Python 3.11+
