@@ -1,5 +1,6 @@
 from supabase import create_client, Client
 from app.config import SUPABASE_URL, SUPABASE_KEY
+from app.utils.crypto import encrypt_value, decrypt_value
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,8 +21,11 @@ def get_user_data(tg_id, date_str):
                       .execute())
         metrics_info = metrics_res.data[0] if metrics_res.data else {}
 
+        # Decrypt gemini_key if present
+        if user_info.get("gemini_key"):
+            user_info["gemini_key"] = decrypt_value(user_info["gemini_key"])
+
         # Merge for backward compatibility in the rest of the app
-        # This allows the rest of the code to still access things like 'gemini_key' directly
         return {**user_info, **metrics_info}
     except Exception as e:
         logger.error(f"Error fetching data for {tg_id}: {e}")
@@ -40,6 +44,10 @@ def sync_to_supabase(tg_id, date_str, updates):
         m_updates = {k: v for k, v in updates.items() if k in metrics_fields}
 
         if u_updates:
+            # Encrypt gemini_key if being updated
+            if "gemini_key" in u_updates:
+                u_updates["gemini_key"] = encrypt_value(u_updates["gemini_key"])
+                
             u_updates["telegram_id"] = tg_id_str
             supabase.table("users").upsert(u_updates, on_conflict="telegram_id").execute()
 

@@ -8,3 +8,4 @@ SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 IST = pytz.timezone('Asia/Kolkata')
 MODEL_ID = "gemini-2.0-flash"
 PORT = int(os.environ.get('PORT', 8080))
+MASTER_KEY = os.environ.get('MASTER_KEY') # For encryption/decryption
