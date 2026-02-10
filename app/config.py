@@ -13,6 +13,6 @@ MASTER_KEY = os.environ.get('MASTER_KEY') # For encryption/decryption
 SUPPORTED_PROVIDERS = ["gemini", "openrouter"]
 DEFAULT_MODELS = {
     "gemini": "gemini-1.5-flash",
-    "openrouter": "google/gemma-2-9b-it:free"
+    "openrouter": "openrouter/free"
 }
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

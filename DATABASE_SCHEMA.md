@@ -14,6 +14,9 @@ erDiagram
     users {
         text telegram_id PK
         text gemini_key
+        text openrouter_key
+        text preferred_provider
+        text preferred_model
         text timezone
         timestamptz created_at
     }
@@ -49,6 +52,9 @@ erDiagram
 **Purpose**: Stores the persistent identity and global settings of each person using the bot.
 - **`telegram_id`**: The unique identifier from Telegram. Used as the main reference across all tables.
 - **`gemini_key`**: The user's personal Google AI API key.
+- **`openrouter_key`**: The user's personal OpenRouter API key.
+- **`preferred_provider`**: The active provider (defaults to `gemini`).
+- **`preferred_model`**: The specific model to use for that provider.
 - **`timezone`**: Used to ensure reports and reminders arrive at the correct local time (defaults to `Asia/Kolkata`).
 
 ### 2. `user_integrations`

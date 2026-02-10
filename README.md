@@ -13,7 +13,7 @@ An AI-powered health and fitness companion that lives in Telegram. It integrates
     - **9 PM Wind-down**: Summarizes achievements, analyze nutrition (MyFitnessPal), and suggests recovery strategies.
 - **Device Integration**: Native syncing with **Garmin Connect** (Steps, Heart Rate, Body Battery, Stress, Sleep, Workouts) and **MyFitnessPal** (Nutrition/Macros).
 - **Proactive Nudges**: Automated reminders for weight logging, water intake, and evening workout checks.
-- **AI Brain**: Powered by **Gemini 2.0 Flash** for natural, encouraging, and context-aware health coaching.
+- **Multi-Model AI Brain**: Powered by **Gemini** and **OpenRouter**. Switch between models like **Google Gemini**, **Llama 3.1**, or **Mistral** anytime.
 - **Relational Database**: Scalable Supabase architecture with separate tables for user profiles, platform integrations, and daily metrics.
 
 ---
@@ -23,7 +23,7 @@ An AI-powered health and fitness companion that lives in Telegram. It integrates
 Follow these steps to get your personal AI coach running in minutes:
 
 1.  **Find the Bot**: Search for [@fitVinod_bot](https://t.me/fitVinod_bot) on Telegram and press **Start**.
-2.  **Set your AI Key**: (Only if self-hosting) Send `/set_key your_api_key` to give the bot its "brain."
+2.  **Set your AI Key**: Send `/set_key gemini your_key` or `/set_key openrouter your_key`.
 3.  **Link Garmin**: Send `/set_garmin your_email your_password`. 
     - *Tip: This syncs your steps, sleep, and MyFitnessPal nutrition data automatically.*
 4.  **Log your Weight**: Simply type `85kg` or `My weight is 85.5` anytime. The bot will track your progress.
@@ -33,7 +33,9 @@ Follow these steps to get your personal AI coach running in minutes:
 ### 🎮 Commands
 - `/report`: Get an instant health summary (Morning or Evening).
 - `/set_garmin`: Link your Garmin Connect account.
-- `/set_key`: Configure your Gemini API key.
+- `/set_key <provider> <key>`: Configure Gemini or OpenRouter keys.
+- `/set_provider <provider>`: Switch between `gemini` and `openrouter`.
+- `/set_model <model_id>`: Set a specific model (e.g., `openrouter/free`).
 
 ---
 
@@ -42,7 +44,7 @@ Follow these steps to get your personal AI coach running in minutes:
 - **Language**: Python 3.11+
 - **Framework**: `pyTelegramBotAPI` (Telebot)
 - **Database**: `Supabase` (PostgreSQL)
-- **AI**: `Google Gemini SDK`
+- **AI**: `llm_factory` (Gemini & OpenRouter via `requests`)
 - **Scheduler**: `APScheduler`
 - **Server**: `Flask` + `Waitress` (for health checks/deployment)
 - **Infrastructure**: `Docker`
@@ -63,7 +65,7 @@ Create a `.env` file (or set these in your environment):
 TELEGRAM_TOKEN=your_telegram_bot_token
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_service_role_key
-GEMINI_KEY=your_gemini_api_key
+MASTER_KEY=your_32_byte_base64_encryption_key
 PORT=8080
 ```
 
@@ -99,7 +101,9 @@ python main.py
 │   │   └── bot_instance.py # Bot initialization
 │   ├── services/
 │   │   ├── garmin.py       # Garmin & MyFitnessPal integration service
-│   │   └── gemini.py       # AI response generation service
+│   │   ├── gemini.py       # Gemini API service
+│   │   ├── openrouter.py   # OpenRouter API service
+│   │   └── llm_factory.py  # Unified LLM provider factory
 │   ├── database.py         # Supabase CRUD operations
 │   ├── scheduler.py        # Background job configurations
 │   └── config.py           # Global constants and timezone setup
