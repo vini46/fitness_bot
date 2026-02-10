@@ -23,19 +23,24 @@ An AI-powered health and fitness companion that lives in Telegram. It integrates
 Follow these steps to get your personal AI coach running in minutes:
 
 1.  **Find the Bot**: Search for [@fitVinod_bot](https://t.me/fitVinod_bot) on Telegram and press **Start**.
-2.  **Set your AI Key**: Send `/set_key gemini your_key` or `/set_key openrouter your_key`.
-3.  **Link Garmin**: Send `/set_garmin your_email your_password`. 
+2.  **Add an API Key**:
+    - For Gemini: Send `/set_key gemini your_key`
+    - For OpenRouter: Send `/set_key openrouter your_key`
+3.  **Configure OpenRouter (Recommended for 429 Errors)**:
+    - Switch your active provider: Send `/set_provider openrouter`.
+    - Set the model to free: Send `/set_model openrouter/free`.
+4.  **Link Garmin**: Send `/set_garmin your_email your_password`. 
     - *Tip: This syncs your steps, sleep, and MyFitnessPal nutrition data automatically.*
-4.  **Log your Weight**: Simply type `85kg` or `My weight is 85.5` anytime. The bot will track your progress.
-5.  **Log your Food**: Type `I had a 500 kcal lunch` to track calories manually if you don't use MyFitnessPal.
-6.  **Ask Questions**: Ask the coach anything! e.g., *"Why is my body battery low?"* or *"How was my sleep last night?"*
+5.  **Log your Weight**: Simply type `85kg` or `My weight is 85.5` anytime. The bot will track your progress.
+6.  **Log your Food**: Type `I had a 500 kcal lunch` to track calories manually if you don't use MyFitnessPal.
+7.  **Ask Questions**: Ask the coach anything! e.g., *"Why is my body battery low?"* or *"How was my sleep last night?"*
 
 ### 🎮 Commands
 - `/report`: Get an instant health summary (Morning or Evening).
 - `/set_garmin`: Link your Garmin Connect account.
-- `/set_key <provider> <key>`: Configure Gemini or OpenRouter keys.
-- `/set_provider <provider>`: Switch between `gemini` and `openrouter`.
-- `/set_model <model_id>`: Set a specific model (e.g., `openrouter/free`).
+- `/set_key <provider> <key>`: Store your Gemini or OpenRouter API key.
+- `/set_provider <provider>`: Choose which brain to use (e.g., `gemini` or `openrouter`).
+- `/set_model <model_id>`: Set a specific AI model (e.g., `openrouter/free` for auto-routing to free models).
 
 ---
 

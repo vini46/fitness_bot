@@ -170,26 +170,4 @@ def workout_nudge():
         except Exception as e:
             logger.error(f"Error in workout nudge for {user_id}: {e}")
 
-def startup_catchup():
-    """Run on startup to catch any reminders missed during downtime."""
-    logger.info("Running robust startup catch-up check.")
-    now = datetime.datetime.now(IST)
-    hr = now.hour
-    
-    # 0. Catch 9 AM Kickoff
-    if hr >= 9:
-        multi_user_kickoff_9am()
-        
-    # 1. Catch 8 AM Morning Reminder
-    if hr >= 8:
-        morning_reminder()
-        
-    # 2. Catch all scheduled Water Reminders (9, 12, 15, 18, 21) that were missed
-    water_slots = [9, 12, 15, 18, 21]
-    for w_hr in water_slots:
-        if hr >= w_hr:
-            water_reminder(specific_hr=w_hr)
-            
-    # 3. Catch 6 PM Workout Nudge if bot starts later
-    if hr >= 18:
-        workout_nudge()
+
