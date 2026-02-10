@@ -8,3 +8,4 @@ garth
 apscheduler
 pytz
 waitress
+requests

@@ -6,7 +6,7 @@ import logging
 from app.config import IST, MODEL_ID
 from app.database import get_user_data, sync_to_supabase, supabase
 from app.services.garmin import fetch_workout_details, get_today_str
-from app.services.gemini import get_gemini_response
+from app.services.llm_factory import get_llm_response
 from app.bot.bot_instance import bot
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,10 @@ def get_unique_users():
 def run_report_for_user(tg_id, mode="evening"):
     today = get_today_str()
     user_data = get_user_data(tg_id, today)
-    if not user_data or not user_data.get('gemini_key'): return
+    if not user_data: return
+    # Check if they have at least one key for a supported provider
+    has_any_key = any(user_data.get(f"{p}_key") for p in ["gemini", "openrouter"])
+    if not has_any_key: return
 
     from app.services.garmin import fetch_workout_details, fetch_advanced_metrics
     workouts = fetch_workout_details(tg_id)
@@ -55,10 +58,10 @@ def run_report_for_user(tg_id, mode="evening"):
                   "If recovery (Body Battery/Sleep) is low, suggest early sleep. "
                   "Keep it reflective and encouraging. DO NOT use underscores (_) and use minimal bolding.")
     
-    analysis = get_gemini_response(tg_id, prompt)
+    analysis = get_llm_response(tg_id, prompt)
     
     if analysis == "RATE_LIMIT_EXCEEDED":
-        bot.send_message(tg_id, "⏳ AI is busy. Try `/report` in a few minutes.")
+        bot.send_message(tg_id, "⏳ AI is busy or rate limited. Try `/report` in a few minutes or switch models.")
         return
 
     clean_analysis = analysis.replace("_", "-").replace("[", "(").replace("]", ")")

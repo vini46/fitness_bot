@@ -4,7 +4,7 @@ from app.bot.bot_instance import bot
 from app.bot.tasks import run_report_for_user
 from app.database import get_user_data, sync_to_supabase, get_weight_history
 from app.services.garmin import fetch_workout_details, get_today_str
-from app.services.gemini import get_gemini_response
+from app.services.llm_factory import get_llm_response
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,40 @@ def safe_reply(message, text, parse_mode="Markdown"):
 def register_handlers():
     @bot.message_handler(commands=['set_key'])
     def set_key(message):
-        key = message.text.replace('/set_key', '').strip()
-        sync_to_supabase(message.chat.id, get_today_str(), {"gemini_key": key})
-        bot.reply_to(message, "✅ Key saved!")
+        parts = message.text.split()
+        if len(parts) < 3:
+            bot.reply_to(message, "Usage: `/set_key <gemini|openrouter> <your_api_key>`", parse_mode="Markdown")
+            return
+        
+        provider = parts[1].lower()
+        key = parts[2].strip()
+        
+        if provider not in ["gemini", "openrouter"]:
+            bot.reply_to(message, "❌ Unsupported provider. Use `gemini` or `openrouter`.")
+            return
+
+        sync_to_supabase(message.chat.id, get_today_str(), {f"{provider}_key": key})
+        bot.reply_to(message, f"✅ {provider.capitalize()} key saved! Use `/set_provider {provider}` to use it.")
+
+    @bot.message_handler(commands=['set_provider'])
+    def set_provider(message):
+        provider = message.text.replace('/set_provider', '').strip().lower()
+        if provider not in ["gemini", "openrouter"]:
+            bot.reply_to(message, "❌ Use `gemini` or `openrouter`.")
+            return
+        
+        sync_to_supabase(message.chat.id, get_today_str(), {"preferred_provider": provider})
+        bot.reply_to(message, f"✅ Preferred provider set to {provider.capitalize()}.")
+
+    @bot.message_handler(commands=['set_model'])
+    def set_model(message):
+        model_id = message.text.replace('/set_model', '').strip()
+        if not model_id:
+            bot.reply_to(message, "Usage: `/set_model <model_id>` \nExample: `/set_model google/gemma-2-9b-it:free`", parse_mode="Markdown")
+            return
+        
+        sync_to_supabase(message.chat.id, get_today_str(), {"preferred_model": model_id})
+        bot.reply_to(message, f"✅ Preferred model set to `{model_id}`.")
 
     @bot.message_handler(commands=['report'])
     def manual_report(message):
@@ -88,10 +119,10 @@ def register_handlers():
             prompt = (f"Review this weight history and provide a thoughtful coaching analysis on progress and trends. "
                       f"Keep it encouraging and concise:\n\n{history_str}")
             
-            analysis = get_gemini_response(tg_id, prompt)
+            analysis = get_llm_response(tg_id, prompt)
             safe_reply(message, f"⚖️ *Weight Progress Analysis*\n\n{analysis}")
         elif ("kg" in text or "weight" in text) and any(c.isdigit() for c in text):
-            res = get_gemini_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
+            res = get_llm_response(tg_id, f"Extract only the numeric weight from: '{text}'. Output only the number.")
             match = re.search(r"[-+]?\d*\.?\d+", res)
             val = match.group(0) if match else None
             if val:
@@ -99,9 +130,9 @@ def register_handlers():
                 bot.reply_to(message, f"⚖️ {val}kg logged.")
             else:
                 # Fallback to chat if extraction fails
-                safe_reply(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+                safe_reply(message, get_llm_response(tg_id, f"Coach reply: {text}"))
         elif any(w in text for w in ["ate", "had", "lunch", "dinner"]) and any(c.isdigit() for c in text):
-            res = get_gemini_response(tg_id, f"Identify the total calories in: '{text}'. Output ONLY the number.")
+            res = get_llm_response(tg_id, f"Identify the total calories in: '{text}'. Output ONLY the number.")
             match = re.search(r"\d+", res)
             cals_val = int(match.group(0)) if match else None
             
@@ -115,6 +146,6 @@ def register_handlers():
                     bot.reply_to(message, f"🍎 Logged {cals_val} kcal. Total: {new_total}")
             else:
                 # Fallback to chat if extraction fails
-                safe_reply(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+                safe_reply(message, get_llm_response(tg_id, f"Coach reply: {text}"))
         else:
-            safe_reply(message, get_gemini_response(tg_id, f"Coach reply: {text}"))
+            safe_reply(message, get_llm_response(tg_id, f"Coach reply: {text}"))

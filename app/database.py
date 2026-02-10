@@ -21,9 +21,10 @@ def get_user_data(tg_id, date_str):
                       .execute())
         metrics_info = metrics_res.data[0] if metrics_res.data else {}
 
-        # Decrypt gemini_key if present
-        if user_info.get("gemini_key"):
-            user_info["gemini_key"] = decrypt_value(user_info["gemini_key"])
+        # Decrypt keys if present
+        for key in ["gemini_key", "openrouter_key"]:
+            if user_info.get(key):
+                user_info[key] = decrypt_value(user_info[key])
 
         # Merge for backward compatibility in the rest of the app
         return {**user_info, **metrics_info}
@@ -37,16 +38,17 @@ def sync_to_supabase(tg_id, date_str, updates):
         tg_id_str = str(tg_id)
         
         # Split updates into 'users' fields and 'daily_metrics' fields
-        user_fields = ["gemini_key", "timezone"]
+        user_fields = ["gemini_key", "openrouter_key", "preferred_provider", "preferred_model", "timezone"]
         metrics_fields = ["weight", "calories_consumed", "steps", "sleep_score", "body_battery", "stress_level", "last_notified"]
         
         u_updates = {k: v for k, v in updates.items() if k in user_fields}
         m_updates = {k: v for k, v in updates.items() if k in metrics_fields}
 
         if u_updates:
-            # Encrypt gemini_key if being updated
-            if "gemini_key" in u_updates:
-                u_updates["gemini_key"] = encrypt_value(u_updates["gemini_key"])
+            # Encrypt keys if being updated
+            for key in ["gemini_key", "openrouter_key"]:
+                if key in u_updates:
+                    u_updates[key] = encrypt_value(u_updates[key])
                 
             u_updates["telegram_id"] = tg_id_str
             supabase.table("users").upsert(u_updates, on_conflict="telegram_id").execute()
